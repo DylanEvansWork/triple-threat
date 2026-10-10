@@ -1,0 +1,10 @@
+import {launchParty,sleep} from './harness.mjs';
+const party=await launchParty({n:3,autoready:false});
+const keys=await party.host.evaluate(()=>Object.keys(GAMES).filter(k=>!GAMES[k].hidden));
+console.log('games loaded:',keys.length,keys.join(','));
+await party.host.click('#gbtn');await sleep(300);
+await party.shot('test/out/lobby-picker.png',0);
+await party.host.click('#gpdone');await sleep(200);
+await party.shot('test/out/lobby-main.png',0);
+console.log('errors:',party.errors);
+await party.close();

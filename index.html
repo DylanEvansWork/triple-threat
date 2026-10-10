@@ -652,7 +652,7 @@ document.addEventListener('contextmenu',e=>e.preventDefault());
 try{$('#name').value=localStorage.tt_name||'';}catch(e){}
 {const j=new URLSearchParams(location.search).get('join');if(j){$('#code').value=j.toUpperCase().slice(0,4);setTimeout(()=>$('#name').focus(),100);}}
 // load the games (each file registers itself in GAMES); dynamic script tags with async=false run in order
-['spy','artillery','runner','bomber','tron','pong','sumo','tag','shotgun','goldrush','liar','splitsteal','simon','duel','unique','social','bombparty','draw','defuse','example'].forEach(f=>{
+['spy','artillery','runner','bomber','tron','pong','sumo','tag','splitsteal','simon','duel','unique','social','bombparty','example'].forEach(f=>{
   if(f==='example'&&!(ONLY&&ONLY.split(',').includes('example')))return;
   const sc=document.createElement('script');sc.src='games/'+f+'.js?v='+VERSION;sc.async=false;document.body.append(sc);
 });
