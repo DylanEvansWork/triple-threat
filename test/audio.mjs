@@ -1,0 +1,14 @@
+import {launchParty,sleep} from './harness.mjs';
+const party=await launchParty({n:2,only:'example',rounds:5});
+const h=party.host;
+await h.click('#snd');await sleep(100);console.log('muted after click:',await h.evaluate(()=>muted));await h.click('#snd');
+await h.evaluate(()=>audio());await sleep(600);
+console.log('lobby: ctx',await h.evaluate(()=>AC&&AC.state),'mode',await h.evaluate(()=>musMode),'step',await h.evaluate(()=>mStep));
+await party.start();await party.waitPhase('play');await sleep(500);
+console.log('play: mode',await h.evaluate(()=>musMode),'(example game has no music mapping → off expected)');
+await party.waitPhase('result');await sleep(500);
+console.log('result: mode',await h.evaluate(()=>musMode),'step',await h.evaluate(()=>mStep));
+await party.waitPhase('final',30000);await sleep(500);
+console.log('final: mode',await h.evaluate(()=>musMode));
+console.log('errors:',party.errors);
+await party.close();
