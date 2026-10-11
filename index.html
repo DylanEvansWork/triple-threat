@@ -233,7 +233,7 @@ input:focus{border-color:#19d3ff}
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 'use strict';
-const VERSION='2.1.0';
+const VERSION='2.2.0';
 const $=s=>document.querySelector(s);
 const E=(tag,cls,html)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e;};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -652,7 +652,7 @@ document.addEventListener('contextmenu',e=>e.preventDefault());
 try{$('#name').value=localStorage.tt_name||'';}catch(e){}
 {const j=new URLSearchParams(location.search).get('join');if(j){$('#code').value=j.toUpperCase().slice(0,4);setTimeout(()=>$('#name').focus(),100);}}
 // load the games (each file registers itself in GAMES); dynamic script tags with async=false run in order
-['spy','artillery','runner','bomber','tron','pong','sumo','tag','shotgun','goldrush','liar','splitsteal','simon','duel','unique','social','bombparty','example'].forEach(f=>{
+['spy','artillery','runner','bomber','tron','pong','sumo','tag','shotgun','goldrush','liar','splitsteal','simon','duel','unique','social','bombparty','draw','defuse','example'].forEach(f=>{
   if(f==='example'&&!(ONLY&&ONLY.split(',').includes('example')))return;
   const sc=document.createElement('script');sc.src='games/'+f+'.js?v='+VERSION;sc.async=false;document.body.append(sc);
 });
