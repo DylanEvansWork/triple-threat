@@ -59,7 +59,7 @@ GAMES.simon={
   init(H){
     const lives={};H.players.forEach(p=>lives[p.id]=LIVES);
     const order=H.players.map(p=>p.id),alive=H.players.filter(p=>!p.aw).map(p=>p.id);
-    const S={seq:[],cap:CAP,order,cur:alive.length?pick(alive):order[0],mode:'watch',pe:9999,idx:0,lives,out:[],pb:null,ds:0,dd:0,fb:null,turn:0,win:null,lastAdd:-1};
+    const S={solo:null,seq:[],cap:CAP,order,cur:alive.length?pick(alive):order[0],mode:'watch',pe:9999,idx:0,lives,out:[],pb:null,ds:0,dd:0,fb:null,turn:0,win:null,lastAdd:-1};
     return S;
   },
   begin(H,S){this.startTurn(H,S);},
@@ -68,14 +68,16 @@ GAMES.simon={
     if(L===0){S.mode='add';S.ds=S.t+LEAD;S.dd=ADD_T;S.pb=null;}
     else{const step=stepFor(L);S.mode='watch';S.pb={t0:S.t+LEAD,step};S.pe=S.t+LEAD+L*step+.35;}
   },
+  here(H,id){const p=H.players.find(p=>p.id===id);return !!p&&!p.aw;},
   endTurn(H,S){
     const alive=S.order.filter(id=>S.lives[id]>0);
     if(alive.length<=1){S.win=alive.length?alive[0]:null;S.over=true;S.hold=2.6;return;}
     if(S.seq.length>=S.cap){S.over=true;S.hold=2.6;S.win=-1;return;}
     if(S.t>this.dur-(6+S.seq.length)){S.over=true;S.hold=2.2;S.win=-2;return;}   // not enough time left for another full turn
-    let i=S.order.indexOf(S.cur);
-    for(let k=1;k<=S.order.length;k++){const id=S.order[(i+k)%S.order.length];if(S.lives[id]>0){S.cur=id;break;}}
-    this.startTurn(H,S);
+    const i=S.order.indexOf(S.cur);let nxt=null;
+    for(let k=1;k<=S.order.length;k++){const id=S.order[(i+k)%S.order.length];if(S.lives[id]>0&&this.here(H,id)){nxt=id;break;}}
+    if(nxt===null){S.over=true;S.hold=1;S.win=-2;return;}   // everyone left is away
+    S.cur=nxt;this.startTurn(H,S);
   },
   fail(H,S,kind,pad){
     const id=S.cur;S.lives[id]=Math.max(0,S.lives[id]-1);
@@ -90,13 +92,13 @@ GAMES.simon={
   },
   tick(H,S,dt){
     if(S.over)return;
-    // players that dropped are out immediately
-    for(const p of H.players){if(p.aw&&S.lives[p.id]>0){S.lives[p.id]=0;if(!S.out.includes(p.id))S.out.push(p.id);
-      if(p.id===S.cur&&S.mode!=='fb'){S.fb={id:p.id,k:'left',pad:-1,lives:0,out:true};S.mode='fb';S.pe=S.t+.4;}}}
-    if(S.mode!=='fb'&&S.lives[S.cur]===0){S.fb={id:S.cur,k:'left',pad:-1,lives:0,out:true};S.mode='fb';S.pe=S.t+.2;}
+    // away players are skipped (not eliminated: they may rejoin). If only one connected player is left for a while, the game ends.
+    const here=S.order.filter(id=>S.lives[id]>0&&this.here(H,id));
+    if(here.length<=1){if(S.solo==null)S.solo=S.t;if(here.length===0||S.t-S.solo>=6){S.win=here.length?here[0]:-2;S.over=true;S.hold=1.5;return;}}else S.solo=null;
+    if(S.mode!=='fb'&&(S.lives[S.cur]===0||!this.here(H,S.cur))){S.fb={id:S.cur,k:'left',pad:-1,lives:S.lives[S.cur],out:S.lives[S.cur]===0};S.mode='fb';S.pe=S.t+.35;}
     const L=S.seq.length;
     if(S.mode==='watch'){
-      if(S.t>=S.pe){S.mode='input';S.ds=S.t;S.dd=limitFor(L);S.idx=0;}
+      if(S.t>=S.pe){S.mode='input';S.ds=S.t;S.dd=limitFor(L)+.5;S.idx=0;}
     }else if(S.mode==='input'){
       if(S.t-S.ds>=S.dd)this.fail(H,S,'time');
     }else if(S.mode==='add'){
@@ -121,11 +123,16 @@ GAMES.simon={
 
   mk(c){
     let root,plEl,bigEl,subEl,dotsEl,tbI,padsEl,fl;const pads=[],chips={},litUntil=[0,0,0,0];
-    let plKey='',lastMode='',lastTurn=-1,lastK=-1,lastDots='',lastFbKey='',lastLives={};
+    let lastTapAt=0,plKey='',lastMode='',lastTurn=-1,lastK=-1,lastDots='',lastFbKey='',lastLives={};
     const S0=()=>c.R()&&c.R().S;
     const name=id=>(c.pl(id)||{n:'?'}).n;
     function light(i,ms,vol){
       litUntil[i]=performance.now()+ms;beep(FREQ[i],ms/1000+.05,'triangle',vol==null?.2:vol);
+    }
+    function nextName(S,R){
+      const i=S.order.indexOf(S.cur);
+      for(let k=1;k<=S.order.length;k++){const id=S.order[(i+k)%S.order.length],p=R.pl.find(p=>p.id===id);if(S.lives[id]>0&&p&&!p.aw)return id===c.me()?'YOU':p.n;}
+      return '—';
     }
     function paintDots(S){
       const L=S.seq.length,mode=S.mode;
@@ -155,9 +162,9 @@ GAMES.simon={
       else if(mode==='input'){big=mine?'👆 YOUR TURN — tap it back':'🔁 '+nm+' is repeating…';col=c.col(S.cur);sub=S.idx+' / '+L+(mine?'':' · hope they choke');}
       else if(mode==='add'){big=mine?(L?'➕ ADD ONE — make it NASTY 😈':'➕ Start the chain — pick a pad'):'😈 '+nm+' is adding a nasty one…';col=c.col(S.cur);sub=mine?'Tap any pad to add it':'Chain: '+L+' → '+(L+1);}
       else if(mode==='fb'){const f=S.fb||{};
-        if(f.k==='added'){big=f.id===me?'✅ Added!':'✅ '+name(f.id)+' added a pad';sub='Chain is now '+f.n;}
-        else if(f.k==='left'){big=name(f.id)+' left the game';sub='';}
-        else{const who=f.id===me?'You':name(f.id);big=f.k==='time'?('⏰ '+who+' ran out of time!'):('💥 '+who+(f.id===me?' got it wrong!':' messed up!'));col='#ff6b6b';sub=f.out?'☠️ '+(f.id===me?'You are':name(f.id)+' is')+' OUT':'−1 life · the pattern stays the same';}}
+        if(f.k==='added'){big=f.id===me?'✅ Added!':'✅ '+name(f.id)+' added a pad';sub='Chain is now '+f.n+' · next: '+nextName(S,R);}
+        else if(f.k==='left'){big=name(f.id)+(f.out?' is out':' is away — skipped');sub='';}
+        else{const who=f.id===me?'You':name(f.id);big=f.k==='time'?('⏰ '+who+' ran out of time!'):('💥 '+who+(f.id===me?' got it wrong!':' messed up!'));col='#ff6b6b';sub=f.out?'☠️ '+(f.id===me?'You are':name(f.id)+' is')+' OUT':'−1 life · pattern stays · next: '+nextName(S,R);}}
       bigEl.textContent=big;bigEl.style.color=col;
       const spd=S.pb?(.62/S.pb.step):(L?(.62/stepFor(L)):1);
       subEl.textContent=sub+(L>=3&&mode!=='fb'&&!S.over&&spd>1.05?'  ⏩ ×'+spd.toFixed(1):'');
@@ -184,6 +191,7 @@ GAMES.simon={
           const b=E('button','sm-pad dim');b.style.setProperty('--c',PADC[i]);b.dataset.i=i;b.textContent=PADS[i];
           b.addEventListener('pointerdown',e=>{
             e.preventDefault();const S=S0();if(!S||S.over||c.R().ph!=='play'||S.cur!==c.me())return;
+            const tn=performance.now();if(tn-lastTapAt<70)return;lastTapAt=tn;
             if(S.mode==='input'){light(i,170);c.act({k:'tap',i});}
             else if(S.mode==='add'&&c.t()-S.ds>=.3){light(i,260,.25);c.act({k:'add',i});}
           });

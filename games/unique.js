@@ -1,23 +1,19 @@
-// BE UNIQUE — category blitz where matching answers cancel out. 4 rounds: write (18s) -> one-by-one reveal -> settle -> optional 🔥 vote (5s) -> tally.
+// MIND MELD (key: unique) — coordination category blitz. Everyone secretly types ONE answer. You score only if you MATCH at least one other player, but NOT everyone.
+// 5 rounds: write (14s) -> one-by-one reveal (matches light up) -> settle (points) -> next.
 (function(){
 const CATS=[
-"Name a fruit","Something you'd find in a school bag","A superhero","A word that rhymes with 'cat'","A famous Disney movie","An excuse for being late",
-"A pizza topping","An animal you would NOT want as a pet","Something that's yellow","Something to take to a desert island","A famous YouTuber or streamer","A type of cereal",
-"Something that's freezing cold","Something you do in the shower","A video game","A fast food place","Something in a kitchen drawer","A really annoying sound",
-"Something you'd NEVER say to a teacher","A country in Europe","A famous singer","Something that comes in pairs","An ice cream flavour","A job that sounds fun",
-"A job that sounds awful","Something you find at the beach","A sport nobody should watch","A board game","Something in your pocket right now","What you yell when you stub your toe (keep it PG)",
-"A school subject","A cartoon character","A colour of the rainbow","Something that's round","A famous duo (Batman & Robin...)","A dinosaur",
-"Something in a haunted house","An animal starting with B","Something in a bathroom","A famous landmark","A sweet or candy","An emoji you use way too much",
-"Something sticky","What to do on a rainy day","Something you should NOT microwave","A Pixar character","Something really long","An animal at the zoo",
-"A funny-sounding word","Something with wheels","A planet","A birthday present everyone wants","A reason to skip school (shh)","A band your parents love",
-"Something to bring to a picnic","A good name for a pet goldfish","A football (soccer) club","A drink","Something that smells terrible","A theme park ride",
-"Something from Harry Potter","Something you'd find in space","Something scary","A Disney princess","Something made of wood","A way to travel",
-"A holiday or celebration","Something that makes you laugh","Something you'd see in winter","A word that rhymes with 'blue'","Something in a wallet or purse","A bad habit",
-"A mythical creature","Something in a forest","A snack at the cinema","A food you eat with your hands","A famous inventor","Something under your bed",
-"A good name for a dog","Something red","A musical instrument","Something people lie about","A thing you'd find in a garden","A famous cartoon animal",
-"Something loud","A superpower you'd want","A word that rhymes with 'night'","Something you do when you're bored","A type of shoe","A famous painting or artist"
+"Name a fruit","Pick a number from 1 to 10","A colour","Something in a fridge","A pet","A famous cartoon character","A Disney movie","A day of the week",
+"A vegetable","An animal at the zoo","A farm animal","A pizza topping","A fast food place","A superhero","A country","A shape",
+"A drink","A sport","A planet","A season","A month","A boy's name","A girl's name","A school subject",
+"Something in a kitchen","Something at the beach","A letter of the alphabet","A type of weather","An ice cream flavour","A board game","A video game","A musical instrument",
+"A cereal","A crisp flavour","A city in the UK","Something that's yellow","Something that's red","Something that's blue","Something that's green","Something that's round",
+"Cats or dogs?","Pizza or burgers?","Summer or winter?","Sweet or savoury?","Day or night?","Tea or coffee?","Beach or mountains?","Heads or tails?",
+"Pick a number from 1 to 100","Pick a letter","Pick a card from a deck","Pick a Mario Kart character","Something you take camping","Something in a school bag","Something in a bathroom","Something in a bedroom",
+"A Harry Potter character","A Pixar movie","A famous footballer","A famous singer","A dinosaur","A type of tree","A type of dog","A type of shoe",
+"A reason to be late","Something that's hot","Something that's cold","Something that's sticky","Something that's loud","Something you do on holiday","A holiday destination","Something you'd find in a pocket",
+"A famous landmark","A candy or sweet","A type of bread","A breakfast food","A snack","A type of transport","A thing with wheels","Something in space",
+"A word that goes with 'ice'","A word that goes with 'fire'","A word that goes with 'sun'","A word that goes with 'water'","A bird","A sea creature","A type of pasta","A famous duo"
 ];
-const STOP=new Set('name a an the of in on at to for with that who you youd your would could might can is it its and or be being famous good bad best worst word words thing things something someone type kind one this these those what when where why how are was were do does did not never nobody have has had get got from by as up out all any some more most really very too keep pg'.split(' '));
 function stem(x){
   if(x.length>3){
     if(x.length>4&&/ies$/.test(x))return x.slice(0,-3)+'y';
@@ -26,13 +22,15 @@ function stem(x){
   }
   return x;
 }
+const NUM={zero:'0',one:'1',two:'2',three:'3',four:'4',five:'5',six:'6',seven:'7',eight:'8',nine:'9',ten:'10',eleven:'11',twelve:'12',thirteen:'13',fourteen:'14',fifteen:'15',sixteen:'16',seventeen:'17',eighteen:'18',nineteen:'19',twenty:'20'};
 function nrm(s){
-  s=String(s||'').toLowerCase();
+  s=String(s==null?'':s).toLowerCase();
   try{s=s.normalize('NFD').replace(/[̀-ͯ]/g,'');}catch(e){}
-  s=s.replace(/&/g,' and ').replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();
+  // strip ASCII punctuation only, so emoji / non-latin answers still count
+  s=s.replace(/&/g,' and ').replace(/[!-\/:-@\[-`{-~]+/g,' ').replace(/\s+/g,' ').trim();
   let w=s.split(' ').filter(Boolean);
   while(w.length>1&&(w[0]==='a'||w[0]==='an'||w[0]==='the'))w.shift();
-  return w.map(stem).join('');
+  return w.map(x=>NUM[x]||(x==='grey'?'gray':x==='colour'?'color':stem(x))).join('');
 }
 function lev1(a,b){ // edit distance <= 1
   if(a===b)return true;const la=a.length,lb=b.length;if(Math.abs(la-lb)>1)return false;
@@ -44,73 +42,61 @@ function lev1(a,b){ // edit distance <= 1
   }
   return d+(la-i)+(lb-j)<=1;
 }
-function same(a,b){return a===b||(a.length>=5&&b.length>=5&&lev1(a,b));}
-function catKeys(cat){
-  const s=cat.toLowerCase().replace(/[^a-z0-9' ]+/g,' ').replace(/'s?\b/g,'').replace(/'/g,'').split(/\s+/).filter(w=>w.length>=3&&!STOP.has(w));
-  return s.map(stem);
-}
-function echo(cat,k){return catKeys(cat).some(x=>x===k);}
+const same=(a,b)=>a===b||(a.length>=5&&b.length>=5&&lev1(a,b));
+const GC=['#ff9f1c','#a78bfa','#2dd4bf'];   // shared colours for matching groups
+const WRITE=14,NR=5;
 
 GAMES.unique={
-  name:'Be Unique',emoji:'✍️',tag:'Think different. Match someone and you both get nothing.',
-  min:2,max:4,
+  name:'Mind Meld',emoji:'🤝',tag:'Read your friends. Match someone, but not everyone.',
+  min:3,max:4,
   rules:[
-    ['✍️','A category appears. Type ONE short answer fast (18 seconds).'],
-    ['💥','Everyone\'s answers get revealed. If two or more people wrote the same thing, it CLASHES and nobody scores. "Pizza" + "pizzas" + "a pizza" = clash.'],
-    ['⭐','A UNIQUE answer scores 2 points. Answering with the category itself or nothing scores 0.'],
-    ['🔥','Then tap 🔥 on your favourite answer that isn\'t yours: the most 🔥 gets +1. 4 rounds total.']
+    ['✍️','A category appears. Everyone secretly types ONE short answer (14 seconds).'],
+    ['🤝','You score if your answer MATCHES at least one other player. The bigger the matching group, the more points each person gets (2 players = 2 pts, 3 players = 3 pts).'],
+    ['😵','But if EVERYONE matches it\'s too obvious and nobody scores. A lone wolf 🐺 scores 0 too.'],
+    ['📖','Example, "A fruit": Dyl writes banana, Sam writes Bananas, Jo writes apple. Dyl and Sam match and get 2 each. Jo gets 0. If Jo had written banana as well: 0 for all three!']
   ],
-  ctrl:'Type your answer, press Enter or LOCK IT IN. Tap 🔥 to vote.',
-  win:'Most points over 4 rounds. 2 per unique answer, +1 for the best answer.',
-  dur:140,hz:10,better:'high',fmt:v=>v+' pts',
+  ctrl:'Type your answer, press Enter or LOCK IT IN.',
+  win:'Most points after 5 rounds. Aim for the obvious-but-not-TOO-obvious answer.',
+  dur:130,hz:10,better:'high',fmt:v=>v+' pts',
 
   // ---------------- host ----------------
   init(H){
     const tot={};H.players.forEach(p=>tot[p.id]=0);
-    return{rd:0,nr:4,cat:'',ph:'wait',pd:0,pe:0,sub:{},ord:[],shown:[],out:{},fire:[],vtd:{},fw:[],fc:{},rp:{},tot,
-      _cats:shuffle(CATS).slice(0,4),_ans:{},_items:[],_fv:{},_nx:0};
+    return{rd:0,nr:NR,cat:'',ph:'wait',pd:0,pe:0,sub:{},ord:[],shown:[],out:{},rp:{},tot,
+      _cats:shuffle(CATS).slice(0,NR),_ans:{},_items:[],_nx:0};
   },
   begin(H,S){startRound(H,S);},
   tick(H,S,dt){
     if(S.ph==='write'){
       const act=H.players.filter(p=>!p.aw);
       const all=act.length>0&&act.every(p=>S.sub[p.id]);
-      if(S.t>=S.pe+0.6||(all&&S.t>S.pe-S.pd+1.2)||(!act.length))beginReveal(H,S);
+      if(S.t>=S.pe+1.3||(all&&S.t>S.pe-S.pd+1.0)||!act.length)beginReveal(H,S);
     }else if(S.ph==='reveal'){
       if(S.shown.length<S.ord.length){
         if(S.t>=S._nx){
           const id=S.ord[S.shown.length],it=S._items.find(x=>x.id===id);
-          S.shown.push({id,a:it.a,g:it.g,x:it.st==='n'||it.st==='e'?it.st:''});
-          S._nx=S.t+(S.ord.length>3?1.35:1.6);
+          S.shown.push({id,a:it.a,g:it.g,x:it.st==='n'?'n':''});
+          S._nx=S.t+(S.ord.length>3?1.25:1.45);
         }
-      }else if(S.t>=S._nx+0.4)settle(H,S);
+      }else if(S.t>=S._nx+0.5)settle(H,S);
     }else if(S.ph==='settle'){
-      if(S.t>=S.pe)startFire(H,S);
-    }else if(S.ph==='fire'){
-      const el=elig(H,S),all=el.length>0&&el.every(id=>id in S._fv);
-      if(S.t>=S.pe||all)tally(H,S);
-    }else if(S.ph==='tally'){
       if(S.t>=S.pe)nextRound(H,S);
     }
   },
   act(H,S,pid,m){
-    if(m.k==='ans'){
-      if(S.ph!=='write'||S.t>S.pe+0.7||S.sub[pid])return;
-      let a=String(m.a==null?'':m.a).replace(/\s+/g,' ').trim().slice(0,26);
-      if(!a)return;
-      S._ans[pid]=a;S.sub[pid]=true;
-    }else if(m.k==='fire'){
-      if(S.ph!=='fire'||pid in S._fv)return;
-      const to=+m.to;if(!S.fire.includes(to)||to===pid)return;
-      S._fv[pid]=to;S.vtd[pid]=true;
-    }
+    if(!m||m.k!=='ans')return;
+    if(S.ph!=='write'||S.t>S.pe+1.2||S.sub[pid])return;
+    if(typeof m.a!=='string')return;
+    let a=Array.from(m.a.replace(/[\u0000-\u001f\u007f‎‏‪-‮⁦-⁩]/g,' ').replace(/\s+/g,' ').trim()).slice(0,26).join('');
+    if(!a)return;
+    S._ans[pid]=a;S.sub[pid]=true;
   },
   val(S,id){return S.tot[id]||0;},
 
   // ---------------- client ----------------
   mk(c){
     let root,rdEl,tmEl,barI,catEl,inRow,inp,btn,main,msg;
-    let started=false,submitted=false,myVote=-1,lastRd=-1,lastSig='',lastShown=0,lastPh='',S0=null;
+    let started=false,submitted=false,lastRd=-1,lastSig='',lastShown=0,lastPh='',S0=null;
     const st=()=>{
       if(document.getElementById('st-unique'))return;
       const s=document.createElement('style');s.id='st-unique';
@@ -120,35 +106,31 @@ GAMES.unique={
 .uqh b{font-size:17px;color:#fff;font-variant-numeric:tabular-nums}
 .uqbar{height:6px;border-radius:4px;background:#ffffff14;overflow:hidden;flex:0 0 6px}
 .uqbar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#19d3ff,#ff3d81)}
-.uqcat{background:linear-gradient(135deg,#2a2a5e,#1d1d44);border-radius:18px;padding:14px 16px;font-weight:900;font-size:clamp(20px,6.6vw,28px);line-height:1.18;text-align:center;min-height:clamp(70px,12vh,110px);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 0 #0f0f26}
+.uqcat{background:linear-gradient(135deg,#2a2a5e,#1d1d44);border-radius:18px;padding:12px 16px;font-weight:900;font-size:clamp(19px,6.4vw,27px);line-height:1.18;text-align:center;min-height:clamp(64px,11vh,104px);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 0 #0f0f26;word-break:break-word}
 .uqin{display:flex;gap:8px}
 .uqin input{flex:1;min-width:0;font-size:18px;height:56px;padding:0 14px;text-align:left}
 .uqin button{flex:0 0 auto;height:56px;min-width:104px;padding:0 14px;font-size:16px;border-radius:16px}
 .uqin.off{display:none}
-.uqmain{display:flex;flex-direction:column;gap:9px;padding-top:4px;min-height:0;flex:1;overflow:hidden}
+.uqmain{display:flex;flex-direction:column;gap:8px;min-height:0;flex:1;overflow:hidden;padding-top:2px}
 .uqchips{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
 .uqchip{background:var(--panel);border-radius:12px;border-bottom:3px solid var(--c);padding:7px 12px;font-weight:800;font-size:14px;display:flex;gap:6px;align-items:center}
 .uqchip.ok{background:#12381f}
-.uqmsg{text-align:center;font-weight:800;font-size:15px;color:#ffd23f;min-height:20px}
-.uqcard{display:flex;align-items:center;gap:10px;background:var(--panel);border-radius:18px;padding:10px 14px;border-left:10px solid var(--c);min-height:clamp(54px,11vh,86px);position:relative;transition:background .2s,box-shadow .2s}
+.uqmsg{text-align:center;font-weight:800;font-size:15px;color:#ffd23f;min-height:20px;line-height:1.25}
+.uqcard{display:flex;align-items:center;gap:10px;background:var(--panel);border-radius:18px;padding:8px 14px;border-left:10px solid var(--c);flex:1 1 0;min-height:46px;max-height:clamp(54px,11vh,86px);position:relative;transition:background .25s,box-shadow .25s}
 .uqcard .nm{font-size:12px;font-weight:800;color:#b5b5dc;line-height:1}
-.uqcard .an{font-size:clamp(20px,7vw,30px);font-weight:900;line-height:1.1;word-break:break-word}
-.uqcard .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.uqcard .an{font-size:clamp(19px,6.6vw,28px);font-weight:900;line-height:1.1;word-break:break-word;overflow:hidden;max-height:2.3em}
+.uqcard .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
 .uqcard .bd{font-weight:900;font-size:15px;text-align:right;white-space:nowrap;line-height:1.1}
 .uqcard.hid .an{color:#ffffff30}
 .uqcard.pop{animation:uqpop .35s}
-.uqcard.cl{background:#4a1220;box-shadow:inset 0 0 0 3px #ff4b4b;animation:uqshake .4s}
-.uqcard.cl .bd{color:#ff7a7a}
-.uqcard.un{background:#12381f;box-shadow:inset 0 0 0 3px #52ff7a}
-.uqcard.un .bd{color:#52ff7a;font-size:20px}
-.uqcard.dim{opacity:.55}
-.uqcard.win{box-shadow:inset 0 0 0 3px #ffd23f,0 0 22px #ffd23f66}
-.uqcard.vote{cursor:pointer;min-height:clamp(64px,12vh,92px)}
-.uqcard.vote:active{transform:scale(.98)}
-.uqcard.mine{opacity:.5}
-.uqcard.sel{background:#4a2410;box-shadow:inset 0 0 0 3px #ff9f1c}
-.uqfire{font-size:30px;line-height:1}
+.uqcard.mt{background:var(--g2);box-shadow:inset 0 0 0 3px var(--g);animation:uqglow .5s}
+.uqcard.mt .bd{color:var(--g);font-size:19px}
+.uqcard.lw{opacity:.6}
+.uqcard.ob{background:#4a1220;box-shadow:inset 0 0 0 3px #ff4b4b;animation:uqshake .45s}
+.uqcard.ob .bd{color:#ff7a7a}
+.uqcard.dim{opacity:.5}
 @keyframes uqpop{0%{transform:scale(.6) rotate(-3deg);opacity:0}60%{transform:scale(1.07)}100%{transform:none;opacity:1}}
+@keyframes uqglow{0%{transform:scale(1)}40%{transform:scale(1.04)}100%{transform:none}}
 @keyframes uqshake{0%,100%{transform:none}20%{transform:translateX(-9px)}40%{transform:translateX(9px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}
 `;
       document.head.append(s);
@@ -156,67 +138,72 @@ GAMES.unique={
     function submit(){
       if(submitted||!S0||S0.ph!=='write')return;
       const v=inp.value.replace(/\s+/g,' ').trim();
-      if(!v){inp.classList.add('shake');setTimeout(()=>inp.classList.remove('shake'),350);return;}
+      if(!v){inp.classList.remove('shake');void inp.offsetWidth;inp.classList.add('shake');return;}
       submitted=true;c.act({k:'ans',a:v});sfx.good();buzz(20);
       inp.blur();inp.disabled=true;btn.disabled=true;btn.textContent='Locked ✓';
     }
-    function card(id,cls,an,bd){
+    function card(id,cls,an,bd,gc){
       const d=E('div','uqcard '+(cls||''),'<div class="tx"><div class="nm"></div><div class="an"></div></div><div class="bd"></div>');
       d.style.setProperty('--c',c.col(id));
+      if(gc){d.style.setProperty('--g',gc);d.style.setProperty('--g2',gc+'30');}
       const p=c.pl(id);d.querySelector('.nm').textContent=(p?p.n:'?')+(id===c.me()?' (you)':'');
       d.querySelector('.an').textContent=an;d.querySelector('.bd').textContent=bd||'';
       return d;
     }
+    // group info among the answers revealed so far
+    function groups(S){
+      const seen=[],info={};
+      for(const sh of S.shown)if(sh.g&&!seen.includes(sh.g))seen.push(sh.g);
+      for(const sh of S.shown)if(sh.g){const o=info[sh.g]||(info[sh.g]={g:sh.g,n:0,ids:[],a:sh.a,col:GC[seen.indexOf(sh.g)%GC.length]});o.n++;o.ids.push(sh.id);}
+      return info;
+    }
     function draw(S,R){
       const pl=R.pl;
-      if(S.ph==='wait'){msg.textContent='Get ready…';main.innerHTML='';return;}
+      if(S.ph==='wait'){msg.textContent='Get ready…';return;}
+      if(S.ph==='done')return;
       rdEl.textContent='ROUND '+(S.rd+1)+'/'+S.nr;
       catEl.textContent=S.cat;
-      const sig=JSON.stringify([S.ph,S.rd,S.sub,S.shown.length,S.out,S.vtd,S.fw,S.fc,myVote,S.tot,pl.map(p=>p.aw)]);
+      const sig=JSON.stringify([S.ph,S.rd,S.sub,S.shown.length,S.out,S.tot,pl.map(p=>p.aw),submitted]);
       if(sig===lastSig)return;lastSig=sig;
       main.innerHTML='';
       inRow.classList.toggle('off',S.ph!=='write');
+      const me=c.me();
       if(S.ph==='write'){
+        if(S.sub[me]&&!submitted){submitted=true;inp.disabled=true;btn.disabled=true;btn.textContent='Locked ✓';try{inp.blur();}catch(e){}}
         const ch=E('div','uqchips');
         for(const p of pl){const done=S.sub[p.id];const x=E('div','uqchip'+(done?' ok':''),'<span></span><span></span>');x.style.setProperty('--c',COLORS[p.ci]);x.children[0].textContent=p.n;x.children[1].textContent=p.aw?'💤':done?'✅':'✍️';ch.append(x);}
         main.append(ch);
-        msg.textContent=submitted?'Locked in! Waiting for the others…':'Type ONE answer. Match someone and you both score 0!';
-      }else if(S.ph==='reveal'||S.ph==='settle'){
-        const fin=S.ph==='settle';
-        S.ord.forEach((id,i)=>{
-          const sh=S.shown[i];
+        msg.textContent=submitted?'Locked in! Hoping someone thinks like you…':'Match ONE other player, but not everyone!';
+      }else{
+        const fin=S.ph==='settle',info=groups(S),n=pl.length;
+        let order=S.ord.slice();
+        if(fin)order.sort((a,b)=>{const sa=S.shown.find(o=>o.id===a),sb=S.shown.find(o=>o.id===b);return ((sb&&sb.g?(info[sb.g]||{n:0}).n:0)-(sa&&sa.g?(info[sa.g]||{n:0}).n:0))||(S.ord.indexOf(a)-S.ord.indexOf(b));});
+        order.forEach(id=>{
+          const i=S.ord.indexOf(id),sh=S.shown[i];
           if(!sh){main.append(card(id,'hid','???',''));return;}
-          const grp=sh.g?S.shown.filter(o=>o.g===sh.g).length:0;
-          let cls='',bd='';
-          if(sh.x==='n'){cls='dim';bd='no answer · 0';}
-          else if(sh.x==='e'){cls='dim';bd='too obvious · 0';}
-          else if(grp>1){cls='cl';bd='💥 CLASH · 0';}
-          else if(fin){cls='un';bd='+2 ⭐';}
+          const gi=sh.g?info[sh.g]:null;
+          let cls='',bd='',gc=null;
+          if(sh.x==='n'){cls='dim';bd='no answer';}
+          else if(fin){
+            const o=S.out[id];
+            if(o==='m'){cls='mt';bd='🤝 +'+(S.rp[id]||0);gc=gi.col;}
+            else if(o==='a'){cls='ob';bd='😵 too obvious';}
+            else if(o==='l'){cls='lw';bd='🐺 lone wolf';}
+          }else if(gi&&gi.n>1){cls='mt';bd='🤝 match!';gc=gi.col;}
           if(i===S.shown.length-1&&!fin)cls+=' pop';
-          main.append(card(id,cls,sh.a||'—',bd));
+          main.append(card(id,cls,sh.a||'—',bd,gc));
         });
-        msg.textContent=fin?'Unique answers score 2!':(S.shown.length?'':'Let\'s see what everyone wrote…');
-      }else if(S.ph==='fire'){
-        const mine=S.fire.includes(c.me());
-        S.fire.forEach(id=>{
-          const sh=S.shown.find(o=>o.id===id);
-          const me=id===c.me();
-          const d=card(id,'vote'+(me?' mine':'')+(myVote===id?' sel':''),sh?sh.a:'',me?'yours':'🔥');
-          if(!me&&myVote<0){d.addEventListener('pointerdown',e=>{e.preventDefault();if(myVote>=0||c.R().ph!=='play')return;myVote=id;c.act({k:'fire',to:id});sfx.good();buzz(25);lastSig='';draw(S0,c.R());});}
-          main.append(d);
-        });
-        const others=S.fire.filter(id=>id!==c.me()).length;
-        msg.textContent=myVote>=0?'🔥 Vote locked in!':others?'Tap the answer you like best! Most 🔥 gets +1':'Others are voting on your answer 👀';
-      }else if(S.ph==='tally'){
-        S.fire.forEach(id=>{
-          const w=S.fw.includes(id);
-          const sh=S.shown.find(o=>o.id===id);
-          main.append(card(id,w?'win':'',sh?sh.a:'',(S.fc[id]?'🔥'.repeat(Math.min(5,S.fc[id])):'')+(w?' +1':'')));
-        });
-        const sc=E('div','uqchips');
-        for(const p of pl){const x=E('div','uqchip','<span></span><b></b>');x.style.setProperty('--c',COLORS[p.ci]);x.children[0].textContent=p.n;x.children[1].textContent=S.tot[p.id]+(S.rp[p.id]?' (+'+S.rp[p.id]+')':'');sc.append(x);}
-        main.append(sc);
-        msg.textContent=S.fw.length?'🔥 '+S.fw.map(id=>(c.pl(id)||{}).n).join(' & ')+' take the crowd vote!':'Nobody got any 🔥';
+        if(fin){
+          const sc=E('div','uqchips');
+          for(const p of pl){const x=E('div','uqchip','<span></span><b></b>');x.style.setProperty('--c',COLORS[p.ci]);x.children[0].textContent=p.n;x.children[1].textContent=(S.tot[p.id]||0)+(S.rp[p.id]?' (+'+S.rp[p.id]+')':'');sc.append(x);}
+          main.append(sc);
+          const vals=Object.values(S.out);
+          if(vals.includes('a')){const a=S.shown.find(o=>S.out[o.id]==='a');msg.textContent='😵 Everyone said "'+(a?a.a:'?')+'". Too obvious: 0 for all!';}
+          else if(vals.includes('m')){
+            const gs=Object.values(info).filter(g=>g.n>1);
+            msg.textContent='🤝 '+gs.map(g=>g.ids.map(id=>(c.pl(id)||{}).n).join(' & ')+' matched (+'+g.n+' each)').join(' · ');
+          }else msg.textContent='🐺 Nobody matched. Mind-reading fail! 0 points.';
+        }else msg.textContent=S.shown.length?'':'Let\'s see what everyone wrote…';
       }
     }
     return{
@@ -239,15 +226,17 @@ GAMES.unique={
       start(){started=true;},
       update(S,R){
         S0=S;
-        if(S.rd!==lastRd){lastRd=S.rd;submitted=false;myVote=-1;inp.value='';inp.disabled=false;btn.disabled=false;btn.textContent='LOCK IT IN';lastSig='';}
+        if(S.rd!==lastRd){lastRd=S.rd;submitted=false;inp.value='';inp.disabled=false;btn.disabled=false;btn.textContent='LOCK IT IN';lastSig='';}
         if(S.ph==='write'&&lastPh!=='write'&&started){try{inp.focus({preventScroll:true});}catch(e){}}
         if(started){
           if(S.shown.length>lastShown&&S.ph==='reveal'){
-            const n=S.shown[S.shown.length-1];const clash=n.g&&S.shown.filter(o=>o.g===n.g).length>1;
-            if(clash){sfx.bad();buzz([40,30,60]);}else sfx.tap();
+            const nw=S.shown[S.shown.length-1];const m=nw.g&&S.shown.filter(o=>o.g===nw.g).length>1;
+            if(m){sfx.good();buzz(30);}else sfx.tap();
           }
-          if(S.ph==='settle'&&lastPh!=='settle'&&S.shown.some(o=>!o.x&&S.out[o.id]==='u')){sfx.win();}
-          if(S.ph==='tally'&&lastPh!=='tally'&&S.fw.length){sfx.good();}
+          if(S.ph==='settle'&&lastPh!=='settle'){
+            const vals=Object.values(S.out);
+            if(vals.includes('a')){sfx.bad();buzz([60,40,80]);}else if(vals.includes('m'))sfx.win();else sfx.tick();
+          }
         }
         lastShown=S.shown.length;lastPh=S.ph;
         draw(S,R);
@@ -255,7 +244,7 @@ GAMES.unique={
       frame(){
         if(!S0||!barI)return;
         const S=S0;let rem=S.pe-c.t();
-        const timed=S.ph==='write'||S.ph==='fire';
+        const timed=S.ph==='write';
         barI.style.width=timed&&S.pd?(clamp(rem/S.pd,0,1)*100)+'%':'0';
         tmEl.textContent=timed?Math.max(0,Math.ceil(rem))+'s':'';
         if(S.ph==='write'&&!submitted&&rem<0.15&&inp.value.trim())submit();
@@ -267,42 +256,31 @@ GAMES.unique={
 
 // ---- host helpers (module-private) ----
 function startRound(H,S){
-  S.cat=S._cats[S.rd];S.ph='write';S.pd=18;S.pe=S.t+S.pd;S.sub={};S._ans={};S.ord=[];S.shown=[];S.out={};S.fire=[];S.vtd={};S.fw=[];S.fc={};S.rp={};S._fv={};
+  S.cat=S._cats[S.rd];S.ph='write';S.pd=WRITE;S.pe=S.t+S.pd;S.sub={};S._ans={};S.ord=[];S.shown=[];S.out={};S.rp={};
 }
 function beginReveal(H,S){
   const items=H.players.map(p=>{
-    const a=S._ans[p.id]||'',k=nrm(a);let st='v';
-    if(!a||!k)st='n';else if(echo(S.cat,k))st='e';
-    return{id:p.id,a,k,st,g:0};
+    const a=S._ans[p.id]||'',k=nrm(a);
+    return{id:p.id,a,k,st:(!a||!k)?'n':'v',g:0};
   });
   const v=items.filter(x=>x.st==='v');
   const par=v.map((_,i)=>i);const find=i=>{while(par[i]!==i)i=par[i]=par[par[i]];return i;};
   for(let i=0;i<v.length;i++)for(let j=i+1;j<v.length;j++)if(same(v[i].k,v[j].k))par[find(i)]=find(j);
   v.forEach((x,i)=>x.g=find(i)+1);
-  v.forEach(x=>{x.st=v.filter(o=>o.g===x.g).length>1?'c':'u';});
   S._items=items;S.ord=shuffle(items.map(x=>x.id));S.shown=[];S.ph='reveal';S._nx=S.t+0.9;S.pd=0;
 }
 function settle(H,S){
+  const n=Math.max(2,H.players.filter(p=>!p.aw).length);   // "everyone" = everyone still at the table
   S.out={};S.rp={};
-  for(const it of S._items){S.out[it.id]=it.st;const pts=it.st==='u'?2:0;S.rp[it.id]=pts;S.tot[it.id]=(S.tot[it.id]||0)+pts;}
-  S.ph='settle';S.pe=S.t+2.4;S.pd=0;
-}
-function elig(H,S){
-  const cand=S.fire;
-  return H.players.filter(p=>!p.aw&&cand.some(x=>x!==p.id)).map(p=>p.id);
-}
-function startFire(H,S){
-  S.fire=S._items.filter(x=>x.st==='u').map(x=>x.id);
-  S._fv={};S.vtd={};
-  if(!S.fire.length||!elig(H,S).length){S.fire=[];nextRound(H,S);return;}
-  S.ph='fire';S.pd=5;S.pe=S.t+5;
-}
-function tally(H,S){
-  const cnt={};for(const v in S._fv){const to=S._fv[v];cnt[to]=(cnt[to]||0)+1;}
-  const mx=Math.max(0,...Object.values(cnt));
-  S.fc=cnt;S.fw=mx>0?S.fire.filter(id=>cnt[id]===mx):[];
-  S.fw.forEach(id=>{S.tot[id]=(S.tot[id]||0)+1;S.rp[id]=(S.rp[id]||0)+1;});
-  S.ph='tally';S.pe=S.t+2.4;S.pd=0;
+  for(const it of S._items){
+    if(it.st==='n'){S.out[it.id]='n';S.rp[it.id]=0;continue;}
+    const g=S._items.filter(o=>o.g&&o.g===it.g).length;
+    let o='l',pts=0;
+    if(g>=n){o='a';}
+    else if(g>=2){o='m';pts=g;}
+    S.out[it.id]=o;S.rp[it.id]=pts;S.tot[it.id]=(S.tot[it.id]||0)+pts;
+  }
+  S.ph='settle';S.pe=S.t+3.2;S.pd=0;
 }
 function nextRound(H,S){
   if(S.rd+1>=S.nr){S.over=true;S.hold=0.4;S.ph='done';return;}

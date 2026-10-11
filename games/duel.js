@@ -16,7 +16,7 @@ function injectStyle(){
 .dl-top{display:flex;gap:6px;flex:0 0 auto}
 .dl-c{flex:1;min-width:0;background:#171734;border-radius:12px;border-bottom:4px solid var(--c);padding:4px 6px;text-align:center}
 .dl-c .nm{font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dl-c .pt{font-size:20px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1.15}
+.dl-c .pt::after{content:' pts';font-size:10px;font-weight:800;color:#8d8db8;white-space:nowrap}.dl-c .pt{white-space:nowrap;font-size:20px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1.15}
 .dl-c .dls{font-size:13px;min-height:17px;line-height:1.3}
 .dl-c.aw{opacity:.4}
 .dl-c.bad{background:#4a0d17}
@@ -77,7 +77,7 @@ GAMES.duel={
   init(H){
     const pts={},dc={};H.players.forEach(p=>{pts[p.id]=0;dc[p.id]=DECOYS;});
     return{d:0,mode:'set',sa:0,w0:0,g0:0,pts,dc,hold:{},lock:{},fk:0,fkBy:-1,fkN:0,rs:null,hist:[],
-      _goAt:0,_g0p:0,_rep:{},_firstAt:0,_allSince:0,_dused:{}};
+      _goAt:0,_g0p:0,_rep:{},_firstAt:0,_allSince:0,_dused:{},_rtt:{}};
   },
   begin(H,S){this.startDuel(S);},
   startDuel(S){
@@ -111,8 +111,18 @@ GAMES.duel={
       else if(S.t>=S._goAt&&S.t>=S.fk+AFTER_FAKE){S.mode='go';S.g0=S.t;S._g0p=performance.now();H.emit({e:'go'});}
     }else if(S.mode==='go'){
       const elig=act.filter(id=>!S.lock[id]);
-      const all=elig.every(id=>S._rep[id]);
-      if(all||S.t-S.g0>=COLLECT||(S._firstAt&&S.t>=S._firstAt+LATE))this.finish(H,S);
+      const unrep=elig.filter(id=>!S._rep[id]);
+      let done=!unrep.length;
+      if(!done){
+        const maxRtt=Math.max(...unrep.map(id=>S._rtt[id]||200));            // slowest link among players who haven't reported
+        const reps=Object.keys(S._rep).map(id=>S._rep[id].ms);
+        if(reps.length){                                                     // a faster reaction could still arrive until best+rtt (+slack)
+          const best=Math.min(...reps);
+          if(performance.now()-S._g0p>=best+maxRtt+120)done=true;
+        }
+        if(S.t-S.g0>=COLLECT+maxRtt/1000)done=true;
+      }
+      if(done)this.finish(H,S);
     }else if(S.mode==='res'){
       if(el>=RES){
         S.d++;
@@ -141,7 +151,12 @@ GAMES.duel={
         S._rep[pid]={ms,arr:performance.now()};
         if(!S._firstAt)S._firstAt=S.t;
       }
-    }else if(m.k==='decoy'){
+    }else if(m.k==='p'){if(typeof m.s==='number'&&isFinite(m.s))H.emit({e:'pong',s:m.s},pid);}
+    else if(m.k==='rtt'){const v=+m.v;if(isFinite(v)&&v>=0){const o=S._rtt[pid];S._rtt[pid]=Math.min(2000,Math.max(v,o===undefined?0:o*.6));}}
+    else if(m.k==='unhold'){
+      if((S.mode==='wait'||S.mode==='go')&&S.hold[pid]&&!S.lock[pid]&&!S._rep[pid]){S.hold[pid]=false;S.lock[pid]='nohold';}
+    }
+    else if(m.k==='decoy'){
       if(S.mode!=='wait'||(S.dc[pid]||0)<=0||S._dused[pid])return;
       if(S.t<S.fk||S.t-S.w0>WAIT_CAP||S._goAt-S.t<.12)return;
       S.dc[pid]--;S._dused[pid]=true;S.fk=S.t+FAKE;S.fkBy=pid;S.fkN++;
@@ -152,8 +167,8 @@ GAMES.duel={
   val(S,id){return S.pts[id]||0;},
 
   mk(c){
-    let fireS,root,chipsEl,hdEl,bigEl,subEl,midEl,decB,fireB,fireT,resEl,fl;
-    let down=false,sentHold=false,goAt=0,fakeUntil=0,fakeSeen=0,myFS=false,fired=0,lastD=-1,lastMode='',plKey='',chips={},lastGlitch=0,sentFlash=0,resKey='',lastView='';
+    let pinged=false,fireS,root,chipsEl,hdEl,bigEl,subEl,midEl,decB,fireB,fireT,resEl,fl;
+    let downId=null,noHoldSince=0,unholdSent=false,down=false,sentHold=false,goAt=0,fakeUntil=0,fakeSeen=0,myFS=false,fired=0,lastD=-1,lastMode='',plKey='',chips={},lastGlitch=0,sentFlash=0,resKey='',lastView='';
     const S0=()=>c.R()&&c.R().S;
     const GL=['FIRE?','F1RE?','FI̷RE?','F▮RE?','FIR_?','F!RE¿','FIRE?!'];
     const name=id=>(c.pl(id)||{n:'?'}).n;
@@ -176,7 +191,7 @@ GAMES.duel={
       const me=c.me(),locked=!!S.lock[me]||myFS;
       resEl.style.display=v==='res'?'flex':'none';midEl.style.display=v==='res'?'none':'flex';
       decB.style.display=v==='res'?'none':'';fireB.style.display=v==='res'?'none':'';
-      if(v==='set'){bigEl.textContent=down?'STEADY… ✊':'HOLD THE BUTTON 👇';subEl.textContent=down?'Waiting for everyone to hold…':'Press and keep holding. Don\'t let go until GREEN.';}
+      if(v==='set'){bigEl.textContent=down?'STEADY… ✊':'HOLD THE BUTTON 👇';{const w=c.R().pl.filter(p=>!p.aw&&!S.hold[p.id]&&p.id!==me).map(p=>p.n);subEl.textContent=down?(w.length?'Waiting for '+w.join(', ')+'…':'Everyone is in…'):'Press and keep holding. Don\'t let go until GREEN.';}}
       else if(v==='wait'){bigEl.textContent='WAIT FOR GREEN…';subEl.textContent='Only SOLID GREEN is real. Let go early = −1.';}
       else if(v==='go'){bigEl.textContent=fired?('⚡ '+fired+' ms'):'FIRE!';subEl.textContent=fired?'Waiting for the others…':'LET GO NOW!';if(fired)bigEl.style.fontSize='min(18vw,72px)';else bigEl.style.fontSize='';}
       else if(v==='fs'){const k=S.lock[me]||'early';bigEl.textContent='💥 '+(LABEL[k]||'FALSE START');subEl.textContent=k==='nohold'?'You weren\'t holding. Sit this one out.':'−1 point. You\'re out of this duel.';}
@@ -223,12 +238,12 @@ GAMES.duel={
         fireB.addEventListener('pointerdown',e=>{
           e.preventDefault();try{fireB.setPointerCapture(e.pointerId);}catch(x){}
           const S=S0();if(!S||c.R().ph!=='play'||down)return;
-          down=true;sfx.tick();buzz(15);
+          down=true;downId=e.pointerId;sfx.tick();buzz(15);
           if(S.mode==='set'){c.act({k:'h'});sentHold=true;}
           apply();
         });
         const up=e=>{
-          if(!down)return;down=false;const S=S0();if(!S||c.R().ph!=='play'){apply();return;}
+          if(!down||e.pointerId!==downId)return;down=false;downId=null;const S=S0();if(!S||c.R().ph!=='play'){apply();return;}
           const me=c.me();
           if(S.mode==='set'){c.act({k:'r',ms:-1});}
           else if(!(S.lock[me]||myFS)&&(S.mode==='wait'||S.mode==='go')){
@@ -244,7 +259,7 @@ GAMES.duel={
         if(!root||!S)return;
         const key=R.pl.map(p=>p.id+p.n).join('|');
         if(key!==plKey){plKey=key;chipsEl.innerHTML='';chips={};R.pl.forEach(p=>{const d=E('div','dl-c','<div class="nm"></div><div class="pt"></div><div class="dls"></div>');d.style.setProperty('--c',COLORS[p.ci]);d.querySelector('.nm').textContent=p.n+(p.id===c.me()?' ★':'');chips[p.id]=d;chipsEl.append(d);});}
-        if(S.d!==lastD){lastD=S.d;goAt=0;fakeUntil=0;fakeSeen=0;myFS=false;fired=0;sentHold=false;resKey='';lastView='';}
+        if(S.d!==lastD){lastD=S.d;unholdSent=false;noHoldSince=0;goAt=0;fakeUntil=0;fakeSeen=0;myFS=false;fired=0;sentHold=false;resKey='';lastView='';}
         if(S.mode!==lastMode){
           if(S.mode==='set'){goAt=0;fakeUntil=0;fakeSeen=0;myFS=false;fired=0;sentHold=false;}
           if(S.mode==='res'){const w=S.rs&&S.rs.w;if(w===c.me()){sfx.win();buzz([40,30,40]);}else if(w!==null&&w!==undefined)sfx.bad();
@@ -252,10 +267,16 @@ GAMES.duel={
           lastMode=S.mode;
         }
         if(S.mode==='set'&&down&&!sentHold){sentHold=true;c.act({k:'h'});}
+        if(S.mode==='set'&&!pinged&&c.R().ph==='play'){pinged=true;c.act({k:'p',s:performance.now()});}
+        if(S.mode!=='set')pinged=false;
+        if((S.mode==='wait'||S.mode==='go')&&S.hold[c.me()]&&!down&&!S.lock[c.me()]&&!fired){   // host thinks I'm holding but I'm not (page reload / lost touch)
+          if(!noHoldSince)noHoldSince=performance.now();
+          if(!unholdSent&&performance.now()-noHoldSince>350){unholdSent=true;c.act({k:'unhold'});}
+        }else noHoldSince=0;
         if(S.mode==='go'&&!goAt&&!S.lock[c.me()])onGo();     // fallback if the event was missed
         hdEl.innerHTML='<span>DUEL '+Math.min(D,S.d+1)+' / '+D+'</span><span>🃏 = decoy</span>';
         for(const p of R.pl){const d=chips[p.id];if(!d)continue;
-          d.querySelector('.pt').textContent=(S.pts[p.id]||0)+' pts';d.classList.toggle('aw',!!p.aw);
+          d.querySelector('.pt').textContent=(S.pts[p.id]||0);d.classList.toggle('aw',!!p.aw);
           const lk=S.lock[p.id];let st='';
           if(S.mode==='set')st=S.hold[p.id]?'✊':'·';
           else if(S.mode==='res')st=S.rs&&S.rs.w===p.id?'🏆':'';
@@ -272,6 +293,7 @@ GAMES.duel={
           fakeUntil=performance.now()+m.d*1000;fakeSeen=1;lastGlitch=0;
           beep(330,.12,'sawtooth',.12,90);setTimeout(()=>beep(300,.12,'sawtooth',.12,90),130);buzz([20,30,20]);apply();
         }
+        else if(m.e==='pong'){c.act({k:'rtt',v:Math.round(performance.now()-m.s)});}
         else if(m.e==='sent'){sentFlash=performance.now()+900;sfx.good();apply();}
         else if(m.e==='fs'){if(m.p!==c.me()){sfx.tick();}}
       },

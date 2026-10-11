@@ -331,7 +331,7 @@ GAMES.goldrush={
       if(!me){ui.hint.textContent='👀 Spectating';return;}
       if(!inside&&!(inRv()&&d.inside[id])){
         ui.btns.style.display='none';
-        ui.hint.textContent=S.over?'':'🚪 You’re out of the temple with '+d.bank[id]+' 💎 banked — sweat with the others';
+        {const k=S.ids.filter(x=>d.inside[x]).length;ui.hint.textContent=S.over?'':'🚪 Safe with '+d.bank[id]+' 💎 banked · '+k+' still inside, sweating';}
         if(!S.over&&S.ph==='reveal'&&S.rv.endEx&&S.rv.reason==='collapse')ui.hint.textContent='💎 '+d.bank[id]+' banked · next expedition soon';
         return;
       }

@@ -5,7 +5,7 @@
 const GW=9,GH=11,NC=GW*GH;
 const SPAWN=[[0,0],[GW-1,GH-1],[GW-1,0],[0,GH-1]];
 const FUSE=2.2,FLAME=.55,SD_AT=55,SD_STEP=.45,SD_LEAD=1.4;
-const SP0=4,SP_STEP=.5,SP_MAX=5.5,NB_MAX=5,RG_MAX=6,CRATE_P=.64,PU_P=.27;
+const BUD_CAP=1.8,BUD_RATE=1.12,SP0=4,SP_STEP=.5,SP_MAX=5.5,NB_MAX=5,RG_MAX=6,CRATE_P=.64,PU_P=.27;
 const idx=(x,y)=>y*GW+x,inb=(x,y)=>x>=0&&y>=0&&x<GW&&y<GH;
 const r2=v=>Math.round(v*100)/100;
 const DIRS=[[0,-1],[1,0],[0,1],[-1,0]];
@@ -88,7 +88,7 @@ GAMES.bomber={
     }
     const S={W:GW,H:GH,ids:H.players.map(p=>p.id),sdAt:SD_AT,hold:2.4,
       _g:g,_cp:cp,_b:[],_fm:new Map(),_pu:[],_sdI:0,_sdNext:SD_AT+SD_LEAD,_gd:true,
-      _p:H.players.map((hp,i)=>({x:SPAWN[i][0],y:SPAWN[i][1],alive:true,sp:SP0,nb:1,rg:2,face:2,mv:0,ct:0,rj:0,dt:null}))};
+      _p:H.players.map((hp,i)=>({x:SPAWN[i][0],y:SPAWN[i][1],alive:true,sp:SP0,nb:1,rg:2,face:2,mv:0,bud:BUD_CAP,rj:0,dt:null}))};
     this._pub(S);
     return S;
   },
@@ -104,12 +104,13 @@ GAMES.bomber={
   },
   begin(H,S){
     // everyone starts safe; reset claim clocks
-    S._p.forEach(p=>{p.ct=0;});
+    S._p.forEach(p=>{p.bud=BUD_CAP;});
   },
   tick(H,S,dt){
     const n=S._p.length;
     S._died=false;S._boom=false;
     if(!S.over)H.players.forEach((hp,i)=>{if(hp.aw)kill(S,i);});
+    for(const p of S._p)p.bud=Math.min(BUD_CAP,p.bud+p.sp*BUD_RATE*dt);
     // fuses
     for(const b of S._b.slice())b.t-=dt;
     for(const b of S._b.slice())if(!b.dead&&b.t<=0)boom(S,b);
@@ -156,8 +157,7 @@ GAMES.bomber={
     let x=+m.x,y=+m.y;
     if(!isFinite(x)||!isFinite(y))return;
     x=clamp(x,0,GW-1);y=clamp(y,0,GH-1);
-    const dtc=clamp(S.t-p.ct,.02,.6);p.ct=S.t;
-    const budget=p.sp*dtc*1.6+.45;
+    const budget=Math.max(0,p.bud);   // token bucket: sustained speed <= 1.3x, bursts <= 1.8 tiles (stops teleport / speed spam)
     let dx=x-p.x,dy=y-p.y,d=Math.hypot(dx,dy),rej=false;
     let why='';
     if(d>budget){const k=budget/d;dx*=k;dy*=k;rej=true;why='speed';}
@@ -169,7 +169,7 @@ GAMES.bomber={
       lx=nx;ly=ny;
     }
     if(rej){p.rj++;(S._rl=S._rl||[]).push([i,r2(S.t),r2(p.x),r2(p.y),r2(x),r2(y),why]);if(S._rl.length>30)S._rl.shift();}
-    p.x=lx;p.y=ly;
+    p.bud-=Math.hypot(lx-p.x,ly-p.y);p.x=lx;p.y=ly;
     if(m.f>=0&&m.f<=3)p.face=m.f|0;
     p.mv=m.m?1:0;
     if(m.k==='bomb'){
@@ -199,7 +199,8 @@ GAMES.bomber={
     let cvo,root,joyEl,bzEl,btn,badge,hint,joy,started=false,keyH=null;
     let S=null,prev=null,mi=-1,L=null,jx=0,jy=0,axis=0,lastFrame=0,lastSend=0,lastSent=null,lastRj=0,claimN=0;
     let cs=40,ox=0,oy=0,lw=0,lh=0;
-    const snaps=[],ghosts=[],parts=[],dieAt={},rendered=[];
+    const snaps=[],ghosts=[],parts=[],dieAt={},rendered=[],floats=[];
+    let dz=[],dzAt=0;
     let shk=0,lastBoom=0,banner=null,bannerT=0,sdWarned=false,sdOn=false,moved=false,hintOff=false,lastBtnTxt='';
     const num=i=>String(i+1);
 
@@ -288,7 +289,7 @@ GAMES.bomber={
         const a=prev.pl[i],b=S.pl[i];if(!a)continue;
         if(a.a&&!b.a){dieAt[i]=now;const col=c.col(S.ids[i]);spark(b.x,b.y,col,22,3.6,.9,4);spark(b.x,b.y,'#fff',8,2.4,.6,2.5);shk=Math.max(shk,12);
           if(i===mi){sfx.bad();buzz([90,40,140]);}else{beep(300,.18,'square',.1,-120);}}
-        if(i===mi&&b.a&&(b.rg>a.rg||b.nb>a.nb||b.sp>a.sp)){sfx.good();buzz(20);spark(b.x,b.y,'#fff',12,2.2,.5,2.5);}
+        if(i===mi&&b.a&&(b.rg>a.rg||b.nb>a.nb||b.sp>a.sp)){sfx.good();buzz(20);spark(b.x,b.y,'#fff',12,2.2,.5,2.5);floatText(b.x,b.y,b.rg>a.rg?'🔥 +1 blast':b.nb>a.nb?'💣 +1 bomb':'👟 faster','#fff');}
       }
       if(S.over&&!prev.over){
         const w=S.winner;
@@ -296,6 +297,29 @@ GAMES.bomber={
         bannerT=now;if(w>=0&&w===mi)sfx.win();
       }
     }
+
+    // blast preview: which tiles will be hit, and when (mirrors the host's flame rules incl. chain reactions)
+    function computeDanger(){
+      const bs=S.b.map(b=>({x:b[0],y:b[1],t:b[2],r:b[3]})),T=bs.map(b=>b.t),cells=bs.map(()=>[]);
+      const at=(x,y)=>bs.findIndex(b=>b.x===x&&b.y===y);
+      for(let pass=0;pass<5;pass++){
+        let ch=false;
+        bs.forEach((b,i)=>{
+          const hs=[[b.x,b.y]];
+          for(const [dx,dy] of DIRS)for(let k=1;k<=b.r;k++){
+            const x=b.x+dx*k,y=b.y+dy*k;if(!inb(x,y))break;const c=S.g[idx(x,y)];
+            if(c==='#'||c==='s')break;hs.push([x,y]);if(c==='c')break;
+            const j=at(x,y);if(j>=0){if(T[j]>T[i]+.001){T[j]=T[i];ch=true;}break;}
+          }
+          cells[i]=hs;
+        });
+        if(!ch)break;
+      }
+      const m=new Map();
+      bs.forEach((b,i)=>{for(const [x,y] of cells[i]){const k=x+','+y,o=m.get(k);if(!o||o[2]>T[i])m.set(k,[x,y,T[i]]);}});
+      dz=[...m.values()];dzAt=performance.now();
+    }
+    function floatText(x,y,txt,col){floats.push({x,y,t:performance.now(),txt,col});}
 
     // ---------- layout / drawing ----------
     function layout(){
@@ -389,6 +413,12 @@ GAMES.bomber={
           g.restore();g.strokeStyle='#ff4d4d';g.lineWidth=2;g.strokeRect(X+1,Y+1,cs-2,cs-2);
         }
       }
+      // blast preview (where bombs WILL hit)
+      for(const [x,y,t] of dz){
+        const tl=t-(now-dzAt)/1000;if(tl<0)continue;
+        const u=Math.max(0,Math.min(1,1-tl/FUSE)),blink=tl<.8&&Math.floor(now/90)%2===0;
+        g.fillStyle='rgba(255,'+(blink?150:80)+',40,'+(.1+.3*u+(blink?.12:0))+')';rr(g,ox+x*cs+2,oy+y*cs+2,cs-4,cs-4,5);g.fill();
+      }
       // sudden-death warnings
       for(const [x,y,left] of S.sd){
         const X=ox+x*cs,Y=oy+y*cs,bl=(Math.floor(now/(left<.5?60:140))%2)?.55:.25;
@@ -439,6 +469,10 @@ GAMES.bomber={
         q.x+=q.vx*dt;q.y+=q.vy*dt;q.vy+=2.4*dt;q.vx*=.985;
         g.globalAlpha=Math.min(1,q.l/q.m*1.5);g.fillStyle=q.c;g.fillRect(px(q.x)-q.s/2,py(q.y)-q.s/2,q.s,q.s);
       }
+      g.globalAlpha=1;
+      for(let k=floats.length-1;k>=0;k--){const f=floats[k],u=(now-f.t)/1100;if(u>=1){floats.splice(k,1);continue;}
+        g.globalAlpha=1-u*u;g.font='900 '+Math.round(cs*.36)+'px system-ui';g.textAlign='center';g.textBaseline='middle';g.lineWidth=4;g.strokeStyle='#0b0b17';
+        g.strokeText(f.txt,px(f.x),py(f.y)-cs*.5-u*cs*1.1);g.fillStyle=f.col;g.fillText(f.txt,px(f.x),py(f.y)-cs*.5-u*cs*1.1);}
       g.globalAlpha=1;
       g.restore();
       // maze frame
@@ -512,6 +546,7 @@ GAMES.bomber={
           else if(Math.hypot(p.x-L.x,p.y-L.y)>2.6){L.x=p.x;L.y=p.y;}
         }
         for(let k=ghosts.length-1;k>=0;k--){const gh=ghosts[k];if(S.b.some(b=>b[0]===gh.x&&b[1]===gh.y)||now>gh.t)ghosts.splice(k,1);}
+        computeDanger();
         onState();
         if(R&&R.ph!=='play')draw(now);
       },

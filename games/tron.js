@@ -2,7 +2,7 @@
 // corner polylines + a continuous progress value, clients interpolate (others) / predict (own turns, scheduled by cell index).
 (function(){
 'use strict';
-const TW=28,TH=40,CD1=1.0,CD=2.0,END=1.8,SH_AT=14,SH_STEP=.7,MR_CAP=26,SP0=7,SP1=11,SP_T=20,NMINI=3;
+const TW=28,TH=40,CD1=1.0,CD=2.0,END=1.8,SH_AT=14,SH_STEP=.7,MR_CAP=26,SP0=6.5,SP1=11,SP_T=28,NMINI=3;
 const DX=[0,1,0,-1],DY=[-1,0,1,0];
 const SPAWN=[[3,6,1],[24,33,3],[24,6,2],[3,33,0]];
 const idx=(x,y)=>y*TW+x,inb=(x,y)=>x>=0&&y>=0&&x<TW&&y<TH;
@@ -17,7 +17,7 @@ function startMini(H,S){
   for(let i=0;i<n;i++){
     const [x,y,d]=SPAWN[order[(i+S.mr-1)%n]];
     const away=!!H.players[i].aw;
-    S._b.push({x,y,d,alive:!away,k:0,pts:[x,y,x,y],q:[],aq:0,cs:away?-1:null,mtc:0,dprev:d});
+    S._b.push({x,y,d,alive:!away,k:0,gr:0,pts:[x,y,x,y],q:[],aq:0,cs:away?-1:null,mtc:0,dprev:d});
     if(!away)S._g[idx(x,y)]=i;
   }
 }
@@ -47,7 +47,13 @@ function step(S){
     nx[i]=[b.x+DX[b.d],b.y+DY[b.d]];
   }
   const dead=new Set();
-  for(let i=0;i<n;i++){if(!nx[i])continue;const [x,y]=nx[i];if(!inb(x,y)||S._g[idx(x,y)]!==-1)dead.add(i);}
+  for(let i=0;i<n;i++){
+    if(!nx[i])continue;const [x,y]=nx[i];
+    if(!inb(x,y)||S._g[idx(x,y)]!==-1){
+      // one-step grace: the bike brakes at the wall for a beat so a last-moment (or laggy) turn still counts
+      if(!bs[i].gr&&S.mt<MR_CAP-1){bs[i].gr=1;nx[i]=null;}else dead.add(i);
+    }else bs[i].gr=0;
+  }
   for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)if(nx[i]&&nx[j]&&nx[i][0]===nx[j][0]&&nx[i][1]===nx[j][1]){dead.add(i);dead.add(j);}
   for(const i of dead)crash(S,i);
   for(let i=0;i<n;i++){
@@ -85,7 +91,7 @@ GAMES.tron={
   },
   _pub(S){
     S.tot=S._tot.slice();
-    S.bk=S._b.map(b=>({p:b.pts.slice(),k:b.k,d:b.d,a:b.alive?1:0,aq:b.aq}));
+    S.bk=S._b.map(b=>({p:b.pts.slice(),k:b.k,d:b.d,a:b.alive?1:0,aq:b.aq,h:b.gr&&b.alive?1:0}));
     S.shT=S.st==='run'?r2(S.mt<SH_AT?SH_AT-S.mt:SH_AT+S.sh*SH_STEP-S.mt):99;
     S.ph=r2(S.ph);S.cd=r2(S.cd);S.mt=r2(S.mt);
   },
@@ -163,7 +169,7 @@ GAMES.tron={
       return P.td;
     }
     // visual progress (cells) of a bike from a snapshot
-    const svOf=(b,st,ph)=>b.a?(b.k>0?b.k-1+(st==='cd'?0:ph):0):b.k;
+    const svOf=(b,st,ph)=>b.a?(b.h?b.k:(b.k>0?b.k-1+(st==='cd'?0:ph):0)):b.k;
     function myPoly(){
       const b=S.bk[mi],base=polys[mi];
       const P={vx:base.vx.slice(),vy:base.vy.slice(),vs:base.vs.slice(),td:b.d,n:base.n};

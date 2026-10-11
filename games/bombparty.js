@@ -61,8 +61,19 @@ function pickSyl(S){
 const alive=(S,id)=>S.lives[id]>0;
 function nextAlive(H,S,from){
   const ids=H.players.map(p=>p.id),i=ids.indexOf(from);
-  for(let k=1;k<=ids.length;k++){const id=ids[(i+k)%ids.length];if(alive(S,id))return id;}
-  return -1;
+  let any=-1;
+  for(let k=1;k<=ids.length;k++){
+    const id=ids[(i+k)%ids.length];
+    if(!alive(S,id))continue;
+    const pl=H.players.find(p=>p.id===id);
+    if(!pl.aw)return id;          // prefer someone who is actually here
+    if(any<0)any=id;
+  }
+  return any;
+}
+function passBomb(H,S,from){
+  if(S._tot-S._el<PASS_MIN)S._tot=S._el+PASS_MIN;
+  S.cur=nextAlive(H,S,from);S.syl=pickSyl(S);S.typed='';S.tn++;
 }
 function newBomb(H,S,holder){
   const sd=S.t>85;
@@ -97,7 +108,7 @@ GAMES.bombparty={
     loadDict();
     const lives={},words={};H.players.forEach(p=>{lives[p.id]=LIVES;words[p.id]=0;});
     return{ph:'wait',cur:-1,syl:'',typed:'',heat:0,lives,words,out:[],used:[],boom:null,pe:0,win:-1,tn:0,
-      _recent:[],_tot:9,_el:0,_set:new Set(),dict:!!DICT};
+      _recent:[],_awT:{},_tot:9,_el:0,_set:new Set(),dict:!!DICT};
   },
   begin(H,S){
     S.dict=!!DICT;
@@ -105,9 +116,19 @@ GAMES.bombparty={
     newBomb(H,S,pick(ids));
   },
   tick(H,S,dt){
-    // away players are out (and never block the bomb)
-    for(const p of H.players)if(p.aw&&alive(S,p.id)){eliminate(H,S,p.id);if(S.ph==='turn'&&S.cur===p.id&&H.players.filter(q=>alive(S,q.id)).length>1){newBomb(H,S,nextAlive(H,S,p.id));}}
+    // away players: bomb skips a holder who has vanished for 1.5s; after 8s away they are out (a quick reconnect/reload keeps your seat)
+    for(const p of H.players){
+      if(p.aw)S._awT[p.id]=(S._awT[p.id]||0)+dt;else S._awT[p.id]=0;
+      if(p.aw&&alive(S,p.id)&&S._awT[p.id]>8){
+        eliminate(H,S,p.id);
+        if(S.ph==='turn'&&S.cur===p.id&&H.players.filter(q=>alive(S,q.id)).length>1)passBomb(H,S,p.id);
+      }
+    }
     if(S.ph==='over')return;
+    if(S.ph==='turn'&&(S._awT[S.cur]||0)>1.5&&H.players.filter(q=>alive(S,q.id)).length>1){
+      const nx=nextAlive(H,S,S.cur),np=H.players.find(q=>q.id===nx);
+      if(nx!==S.cur&&np&&!np.aw){S._awT[S.cur]=0.0;passBomb(H,S,S.cur);}
+    }
     if(H.players.filter(p=>alive(S,p.id)).length<=1){finish(H,S);return;}
     if(S.ph==='turn'){
       S._el+=dt;S.heat=clamp(S._el/S._tot,0,1);
@@ -124,11 +145,11 @@ GAMES.bombparty={
     }
   },
   act(H,S,pid,m){
-    if(S.ph!=='turn'||pid!==S.cur)return;
+    if(!m||typeof m!=='object'||S.ph!=='turn'||pid!==S.cur||typeof m.w!=='string')return;
     if(m.k==='typ'){
-      S.typed=String(m.w==null?'':m.w).toLowerCase().replace(/[^a-z]/g,'').slice(0,20);
+      S.typed=m.w.toLowerCase().replace(/[^a-z]/g,'').slice(0,20);
     }else if(m.k==='w'){
-      const w=String(m.w==null?'':m.w).toLowerCase().trim();
+      const w=m.w.slice(0,64).toLowerCase().trim();
       let why='';
       if(!/^[a-z]+$/.test(w)||w.length>20)why='nw';
       else if(w.length<3)why='short';
@@ -139,9 +160,7 @@ GAMES.bombparty={
       if(why){H.emit({k:'bad',id:pid,why,w});return;}
       S._set.add(w);S.used.push(w);S.words[pid]=(S.words[pid]||0)+1;
       // hot potato: the fuse keeps burning, but the next holder always gets a fair sliver
-      if(S._tot-S._el<PASS_MIN)S._tot=S._el+PASS_MIN;
-      const nx=nextAlive(H,S,pid);
-      S.cur=nx;S.syl=pickSyl(S);S.typed='';S.tn++;
+      passBomb(H,S,pid);
       S.last={id:pid,w,n:S.tn};
       S.dict=!!DICT;
     }
@@ -183,6 +202,8 @@ GAMES.bombparty={
 .bplive b{color:#ff9f1c}
 .bplive.off{display:none}
 .bplive.sh,.bpin.sh{animation:shake .3s}
+.bp.mine{box-shadow:inset 0 0 0 4px #52ff7a77;animation:bpmine .8s infinite alternate}
+@keyframes bpmine{from{box-shadow:inset 0 0 0 3px #52ff7a33}to{box-shadow:inset 0 0 0 5px #52ff7aaa}}
 .bpmsg{text-align:center;font-weight:800;font-size:14px;min-height:18px;color:#ff7a7a}
 .bpused{display:flex;flex-wrap:wrap;gap:5px;align-content:flex-start;overflow:hidden;flex:1;min-height:0}
 .bpused span{background:#1d1d40;border-radius:9px;padding:3px 8px;font-size:12.5px;font-weight:700;color:#b8b8e0}
@@ -241,7 +262,7 @@ GAMES.bombparty={
       }}
       sylEl.textContent=S.syl||'…';
       const mine=S.cur===me&&S.ph==='turn';
-      inRow.classList.toggle('off',!mine);
+      inRow.classList.toggle('off',!mine);root.firstChild.classList.toggle('mine',mine);
       live.classList.toggle('off',mine||S.ph==='wait');
       if(S.ph==='turn'){
         const cp=c.pl(S.cur);

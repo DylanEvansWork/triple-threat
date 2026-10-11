@@ -125,7 +125,7 @@ GAMES.liar={
 
   // ---------------- CLIENT ----------------
   mk(c){
-    let S=null,root,ui={},built=false,timers=[],sel={q:1,f:1},selKey='',stage={rd:-1},lastSec=-1,wasOver=false,bannerT=0,revRd=-1,lastTurn=null;
+    let pending=false,S=null,root,ui={},built=false,timers=[],sel={q:1,f:1},selKey='',stage={rd:-1},lastSec=-1,wasOver=false,bannerT=0,revRd=-1,lastTurn=null;
     const mkE=(t,cl,tx)=>{const e=document.createElement(t);if(cl)e.className=cl;if(tx!=null)e.textContent=tx;return e;};
     const later=(f,ms)=>{const id=setTimeout(f,ms);timers.push(id);return id;};
     const nowT=()=>(c.R()&&c.R().ph==='play')?c.t():(S?S.t:0);
@@ -171,6 +171,7 @@ GAMES.liar={
 .ld-bq{font-size:min(17vw,70px);font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
 .ld-bx{font-size:28px;font-weight:900;color:#8d8db8}
 .ld-bw{font-size:14px;font-weight:800;color:#cfcff0}
+.ld-bx2{font-size:12.5px;font-weight:700;color:#9fb0ff;text-align:center;min-height:16px}
 .ld-bb.pop{animation:ldpop .4s}
 .ld-hist{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;max-height:52px;overflow:hidden}
 .ld-hc{display:inline-flex;align-items:center;gap:3px;background:#ffffff12;border-radius:8px;padding:2px 7px 2px 3px;font-size:12px;font-weight:800;color:#e0e0ff;white-space:nowrap}
@@ -252,7 +253,7 @@ GAMES.liar={
       });
     }
 
-    function myTurn(){return S&&S.ph==='bid'&&!S.over&&S.turn===me()&&S.dc[me()]>0;}
+    function myTurn(){return S&&S.ph==='bid'&&!S.over&&S.turn===me()&&S.dc[me()]>0&&!pending;}
 
     function resetSel(){
       const prev=S.bid;
@@ -313,6 +314,9 @@ GAMES.liar={
       ui.bd.innerHTML='';
       if(b){ui.bd.append(die(b.f,56));ui.bw.textContent='bid by '+nm(b.by)+(S.bids.length&&S.bids[S.bids.length-1].auto?' ⏱️':'');ui.bw.style.color=c.col(b.by);ui.bl.textContent='CURRENT BID — how many in total?';}
       else{ui.bd.append(mkE('span','ld-bx','of ?'));ui.bw.textContent=S.turn===me()?'You open the bidding':nm(S.turn)+' opens the bidding';ui.bw.style.color='';ui.bl.textContent='NO BID YET';}
+      const md=myDice();
+      if(b&&S.dc[me()]>0){const k=md.filter(v=>v===b.f).length,oth=S.total-md.length;ui.bx.textContent='You hold '+k+' of them · '+oth+' hidden dice ≈ '+(oth/6).toFixed(1)+' more';}
+      else ui.bx.textContent=!b&&S.dc[me()]>0?('Tip: you hold '+md.length+' dice — bid on what you can see'):'';
       if(key!==lastBidKey){lastBidKey=key;ui.bb.classList.remove('pop');void ui.bb.offsetWidth;ui.bb.classList.add('pop');}
       ui.hist.innerHTML='';
       S.bids.slice(-6).forEach((h,i,a)=>{
@@ -392,9 +396,10 @@ GAMES.liar={
 
     function sendBid(){
       if(!myTurn()||!legal(S.bid,sel.q,sel.f,S.total))return;
-      c.act({k:'bid',q:sel.q,f:sel.f});sfx.go();buzz(25);
+      c.act({k:'bid',q:sel.q,f:sel.f});sfx.go();buzz(25);pending=true;later(()=>{pending=false;if(S)renderAll();},1200);renderAll();
     }
-    function sendCall(){if(!myTurn()||!S.bid)return;c.act({k:'call'});buzz([40,30,40]);}
+    function sendCall(){if(!myTurn()||!S.bid)return;c.act({k:'call'});buzz([40,30,40]);pending=true;later(()=>{pending=false;if(S)renderAll();},1200);renderAll();}
+    function renderAll(){renderTop();renderBid();renderCtl();}
 
     return{
       mount(r){
@@ -403,7 +408,7 @@ GAMES.liar={
         const bw=mkE('div','ld-bar');ui.bar=mkE('i');bw.append(ui.bar);
         ui.pls=mkE('div','ld-pls');ui.turn=mkE('div','ld-turn');
         ui.bidbox=mkE('div','ld-bidbox');ui.bl=mkE('div','ld-bl');ui.bb=mkE('div','ld-bb');ui.bq=mkE('div','ld-bq');ui.bd=mkE('div');ui.bb.append(ui.bq,mkE('div','ld-bx','×'),ui.bd);ui.bw=mkE('div','ld-bw');ui.hist=mkE('div','ld-hist');
-        ui.bidbox.append(ui.bl,ui.bb,ui.bw,ui.hist);
+        ui.bx=mkE('div','ld-bx2');ui.bidbox.append(ui.bl,ui.bb,ui.bw,ui.bx,ui.hist);
         ui.mine=mkE('div','ld-mine');ui.mt=mkE('div','t');ui.mt.style.whiteSpace='pre';ui.mine.append(ui.mt);
         ui.ctl=mkE('div','ld-ctl');
         const qr=mkE('div','ld-row'),q=mkE('div','ld-q');
@@ -425,7 +430,7 @@ GAMES.liar={
         S=Sn;if(!S||!S.ids)return;
         if(!built)build();
         const key=S.rd+'|'+(S.bid?S.bid.q+'-'+S.bid.f:'')+'|'+S.turn;
-        if(key!==selKey){selKey=key;if(myTurn())resetSel();
+        if(key!==selKey){selKey=key;pending=false;if(myTurn())resetSel();
           if(S.ph==='bid'&&S.turn===me()&&R.ph==='play'){beep(880,.08,'triangle',.12);buzz([30,30,30]);}}
         tickReveal();renderTop();renderBid();renderCtl();setClock();
         if(S.over&&!wasOver){wasOver=true;

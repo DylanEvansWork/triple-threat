@@ -1,6 +1,6 @@
 // SHOTGUN — simultaneous secret-choice duel to the last survivor. Host resolves each turn; clients play a sequenced reveal from S.rv.
 (function(){
-const MAXL=2,MAXA=3,PICK=7,PICK_STORM=5,MINPICK=2.2,STORM=7;
+const MAXL=2,MAXA=3,START_A=1,PICK=7,PICK_STORM=5,MINPICK=2.2,STORM=7;
 const IC={reload:'🔄',shoot:'🔫',block:'🛡️',shotgun:'💥'};
 const NM={reload:'RELOAD',shoot:'SHOOT',block:'BLOCK',shotgun:'SHOTGUN'};
 const SUB={reload:'+1 ammo (max 3)',shoot:'1 ammo · 1 dmg',block:'stops normal shots',shotgun:'3 ammo · 2 dmg · pierces'};
@@ -55,20 +55,20 @@ GAMES.shotgun={
   name:'Shotgun',emoji:'🔫',tag:'Secret moves. Bluffs. Last one standing.',
   min:2,max:4,
   rules:[
-    ['🔄','Every turn ALL players secretly pick a move at the same time (7 seconds). RELOAD gives +1 ammo (max 3).'],
+    ['🔄','Every turn ALL players secretly pick a move at the same time (7 seconds). RELOAD gives +1 ammo (max 3). You start with 1 ammo.'],
     ['🔫','SHOOT costs 1 ammo and takes 1 ❤️ from the player you aim at. Everyone starts with 2 ❤️.'],
     ['🛡️','BLOCK stops every normal shot aimed at you that turn. You can’t block two turns in a row.'],
     ['💥','SHOTGUN costs all 3 ammo, ignores blocks and takes 2 ❤️ — one blast can kill. Then all moves are revealed together!'],
     ['⛈️','From turn 7 a STORM hits: no blocking, and whoever holds the MOST ammo loses 1 ❤️ every turn. Talk. Bluff. Trust nobody.']
   ],
-  ctrl:'Tap a move (then tap who to shoot). Tap again to change your mind until time runs out. No pick = RELOAD.',
+  ctrl:'Tap a move (then tap who to shoot). Tap another move to change your mind until time runs out. No pick = RELOAD. Watch everyone’s ammo — 3 ammo means a SHOTGUN is coming!',
   win:'Last survivor wins. The earlier you die, the lower you rank.',
   dur:110,hz:10,
 
   // ---------------- HOST ----------------
   init(H){
     const ids=H.players.map(p=>p.id),p={};
-    ids.forEach(id=>p[id]={l:MAXL,a:0,blk:0});
+    ids.forEach(id=>p[id]={l:MAXL,a:START_A,blk:0});
     return{n:ids.length,ids,p,turn:1,ph:'pick',pickAt:0,dl:PICK,locked:{},rv:null,rvAt:0,rvEnd:0,hist:[],elim:[],gone:{},fin:false,storm:STORM,_ch:{}};
   },
   begin(H,S){S.pickAt=0;S.dl=PICK;},
@@ -114,7 +114,7 @@ GAMES.shotgun={
   // ---------------- CLIENT ----------------
   mk(c){
     let root,S=null,ui={cards:{}},mine=null,mode='grid',pendA=null,lastTurn=-1,built=false,stage={id:-1,cards:0,res:false,ev:0,fin:false};
-    let timers=[],lastSec=-1,bannerT=0,stormAnn=false,wasOver=false;
+    let pickerAt=0,timers=[],lastSec=-1,bannerT=0,stormAnn=false,wasOver=false;
     const mkE=(t,cl,tx)=>{const e=document.createElement(t);if(cl)e.className=cl;if(tx!=null)e.textContent=tx;return e;};
     const later=(f,ms)=>{const id=setTimeout(f,ms);timers.push(id);return id;};
     const myId=()=>c.me();
@@ -147,6 +147,7 @@ GAMES.shotgun={
 .sg-nm{font-weight:900;font-size:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sg-st{font-weight:700;font-size:14.5px;color:#aeaed6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:17px}
 .sg-st.act{color:#fff;animation:sgpop .3s}
+.sg-st.warn{color:#ffb454;animation:sgpulse .7s infinite alternate}
 .sg-hp{display:flex;gap:2px;font-size:36px;line-height:1}
 .sg-h{color:#ff3d5a;text-shadow:0 0 10px #ff3d5a88;transition:color .2s}
 .sg-h.off{color:#3a3a66;text-shadow:none}
@@ -255,6 +256,7 @@ GAMES.shotgun={
         }else{
           if(me&&mine&&S.locked[id])txt='🔒 '+actText(mine);
           else txt=S.locked[id]?'🔒 locked in':'🤔 thinking…';
+          if(d.a>=MAXA&&!me){txt='⚠️ SHOTGUN READY · '+txt;cls='sg-st warn';}
         }
         e.st.textContent=txt;e.st.className=cls;
       });
@@ -306,7 +308,11 @@ GAMES.shotgun={
         ui.grid.style.display='grid';ui.tgs.style.display='none';
         if(!canPick)ui.hint.textContent=S.over?'':'👀 Reveal…';
         else if(mine&&S.locked[id])ui.hint.textContent='🔒 Locked: '+actText(mine)+' — tap to change';
-        else ui.hint.textContent=d.a>=MAXA?'🔥 Full ammo! SHOTGUN is ready…':'Pick your move — everybody picks at once';
+        else{
+          const big=S.ids.filter(x=>x!==id&&S.p[x].l>0&&disp(x).a>=MAXA).map(nm);
+          if(big.length){ui.hint.style.color='#ff8fa3';ui.hint.textContent='⚠️ '+big.join(' & ')+' can SHOTGUN — blocks won’t save you!';}
+          else ui.hint.textContent=d.a>=MAXA?'🔥 Full ammo! SHOTGUN is ready…':'Pick your move — everybody picks at once';
+        }
       }
     }
     function buildTargets(){
@@ -316,7 +322,7 @@ GAMES.shotgun={
         if(id===myId())return;
         const b=mkE('button','sg-tg');b.dataset.id=id;b.style.setProperty('--c',c.col(id));
         b.append(mkE('span','',nm(id)),mkE('small','','tap to aim'));
-        b.addEventListener('pointerdown',e=>{e.preventDefault();send(pendA,id);});
+        b.addEventListener('pointerdown',e=>{e.preventDefault();if(performance.now()-pickerAt<320)return;send(pendA,id);});
         ui.tgs.append(b);
       });
       ui.tgs.style.gridTemplateColumns='62px '+'1fr '.repeat(S.ids.length-1);
@@ -331,7 +337,7 @@ GAMES.shotgun={
       if(a==='shoot'||a==='shotgun'){
         const tg=S.ids.filter(x=>x!==id&&S.p[x].l>0);if(!tg.length)return;
         if(tg.length===1){send(a,tg[0]);return;}
-        pendA=a;mode='target';sfx.tap();renderPanel();return;
+        pendA=a;mode='target';pickerAt=performance.now();sfx.tap();renderPanel();return;
       }
       send(a,null);
     }

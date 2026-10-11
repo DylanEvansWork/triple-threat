@@ -90,7 +90,7 @@ function lev1(a,b){
 }
 const same=(a,b)=>a===b||(a.length>=5&&b.length>=5&&lev1(a,b));
 const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
-const clean=s=>String(s==null?'':s).replace(/\s+/g,' ').replace(/[.!?\s]+$/,'').trim();
+const clean=s=>(typeof s==='string'?Array.from(s.replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g,' ').replace(/\s+/g,' ').replace(/[.!?\s]+$/,'').trim()).join(''):'');
 const A_N=3,B_N=2,A_VOTE=10,A_REV=4.8,B_WRITE=25,B_PICK=15;
 
 GAMES.social={
@@ -108,7 +108,7 @@ GAMES.social={
 
   // ---------------- host ----------------
   init(H){
-    const tot={},priv={};H.players.forEach(p=>{tot[p.id]=0;priv[p.id]={mine:-1};});
+    const tot={},priv={};H.players.forEach(p=>{tot[p.id]=0;priv[p.id]={mine:-1,vote:-1,pick:-1};});
     return{ph:'wait',part:'A',pi:0,pd:0,pe:0,pr:'',ti:'',vtd:{},vc:{},vv:{},win:[],sc:{},
       q:'',sub:{},opts:[],pk:{},rv:null,step:0,tot,
       _prm:shuffle(PROMPTS).slice(0,A_N),_fct:shuffle(FACTS).slice(0,B_N),_votes:{},_fake:{},_picks:{},_au:[],_real:-1,_ord:[],_nx:0,_end:0,_tot:Object.assign({},tot),_priv:priv};
@@ -123,37 +123,38 @@ GAMES.social={
       if(S.t>=S.pe){if(S.pi+1<A_N)startVote(H,S,S.pi+1);else startWrite(H,S,0);}
     }else if(S.ph==='b_write'){
       const all=act.length>0&&act.every(p=>S.sub[p.id]);
-      if(S.t>=S.pe+0.6||all&&S.t>S.pe-S.pd+1.2||!act.length)startPick(H,S);
+      if(S.t>=S.pe+1.3||all&&S.t>S.pe-S.pd+1.2||!act.length)startPick(H,S);
     }else if(S.ph==='b_pick'){
       const all=act.length>0&&act.every(p=>S.pk[p.id]);
       if(S.t>=S.pe||all&&S.t>S.pe-S.pd+0.9||!act.length)startReveal(H,S);
     }else if(S.ph==='b_rev'){
       const r=S.rv;
       if(S.step<r.ord.length){
-        if(S.t>=S._nx){S.step++;S._nx=S.t+(S.step===r.ord.length-1?1.95:1.6);if(S.step===r.ord.length)S._end=S.t+2.7;}
+        if(S.t>=S._nx){S.step++;S._nx=S.t+(S.step===r.ord.length-1?1.9:1.55);if(S.step===r.ord.length){S._end=S.t+2.5;S.tot=Object.assign({},S._tot);}}
       }else if(S.t>=S._end)finishReveal(H,S);
     }
   },
   act(H,S,pid,m){
+    if(!m||typeof m!=='object')return;
     if(m.k==='vote'){
-      if(S.ph!=='a_vote'||S.vtd[pid])return;
-      const to=+m.to;if(!H.players.some(p=>p.id===to))return;
-      S._votes[pid]=to;S.vtd[pid]=true;
+      if(S.ph!=='a_vote'||S.vtd[pid]||typeof m.to!=='number')return;
+      const to=m.to;if(!H.players.some(p=>p.id===to))return;
+      S._votes[pid]=to;S.vtd[pid]=true;if(S._priv[pid])S._priv[pid].vote=to;
     }else if(m.k==='fake'){
-      if(S.ph!=='b_write'||S.t>S.pe+0.7||S.sub[pid])return;
-      let a=clean(m.a).slice(0,28);if(!a)return;
+      if(S.ph!=='b_write'||S.t>S.pe+1.2||S.sub[pid])return;
+      let a=Array.from(clean(m.a)).slice(0,28).join('');if(!a)return;
       const f=S._fct[S.pi],k=nrm(a);
       if(!k){return;}
       if(same(k,nrm(f.a))||f.alt.some(x=>same(k,nrm(x)))){H.emit({k:'rej',why:'real'},pid);return;}
       S._fake[pid]=a;S.sub[pid]=true;
     }else if(m.k==='pick'){
       if(S.ph!=='b_pick'||S.pk[pid])return;
-      const i=+m.i;if(!(i>=0&&i<S.opts.length))return;
+      const i=m.i;if(typeof i!=='number'||!Number.isInteger(i)||i<0||i>=S.opts.length)return;
       if(S._au[i]&&S._au[i].includes(pid))return;
-      S._picks[pid]=i;S.pk[pid]=true;
+      S._picks[pid]=i;S.pk[pid]=true;if(S._priv[pid])S._priv[pid].pick=i;
     }
   },
-  val(S,id){return S.tot[id]||0;},
+  val(S,id){return (S._tot&&S._tot[id])||0;},
 
   // ---------------- client ----------------
   mk(c){
@@ -193,7 +194,7 @@ GAMES.social={
 .scrow .dots i{width:14px;height:14px;border-radius:50%;display:block;animation:scpop .3s backwards}
 .scrow.w{box-shadow:inset 0 0 0 3px #ffd23f,0 0 24px #ffd23f55}
 .scban{text-align:center;font-weight:900;font-size:clamp(20px,6.6vw,28px);color:#ffd23f;animation:scban .6s backwards;animation-delay:1.3s;line-height:1.15}
-.scopt{background:var(--panel);border-radius:16px;padding:8px 14px;flex:1 1 0;min-height:44px;max-height:clamp(52px,9vh,72px);font-weight:900;font-size:clamp(18px,5.8vw,24px);display:flex;flex-direction:column;justify-content:center;gap:3px;border-left:10px solid #2d2d62;transition:background .25s}
+.scopt{overflow:hidden;overflow-wrap:anywhere;word-break:break-word;min-width:0;background:var(--panel);border-radius:16px;padding:8px 14px;flex:1 1 0;min-height:44px;max-height:clamp(52px,9vh,72px);font-weight:900;font-size:clamp(18px,5.8vw,24px);display:flex;flex-direction:column;justify-content:center;gap:3px;border-left:10px solid #2d2d62;transition:background .25s}
 .scopt .nt{font-size:13px;font-weight:800;color:#d8d8f4;line-height:1.25}
 .scopt.fk{border-left-color:#ff4b4b;background:#3a1220}
 .scopt.rl{border-left-color:#52ff7a;background:#12381f;box-shadow:0 0 22px #52ff7a44}
@@ -301,7 +302,8 @@ GAMES.social={
             if(!nt)d.lastChild.remove();
             main.append(d);
           });
-          if(S.step>=r.ord.length){const f=E('div','scfact','<b>FACT:</b> ');f.append(document.createTextNode(r.fact));main.append(f);}
+          if(S.step>=r.ord.length){const f=E('div','scfact','<b>FACT:</b> ');f.append(document.createTextNode(r.fact));main.append(f);
+            const sc=E('div','scchips');for(const p of pl){const x=E('div','scchip','<span></span><b></b>');x.style.setProperty('--c',COLORS[p.ci]);x.children[0].textContent=p.n;const g=r.gain[p.id]||0;x.children[1].textContent=(S.tot[p.id]||0)+(g?' (+'+g+')':'');sc.append(x);}main.append(sc);}
           msg.textContent=S.step<r.ord.length?(S.step?'':'Moment of truth…'):'';
         }
       }
@@ -333,6 +335,9 @@ GAMES.social={
       update(S,R){
         S0=S;
         const k=S.ph+':'+S.pi;
+        const pv=c.priv()||{};
+        if(myVote<0&&S.ph==='a_vote'&&pv.vote>=0){myVote=pv.vote;lastSig='';}
+        if(myPick<0&&S.ph==='b_pick'&&pv.pick>=0){myPick=pv.pick;lastSig='';}
         if(k!==key){
           key=k;myVote=-1;myPick=-1;submitted=false;lastSig='';msg.dataset.rej='';
           inp.value='';inp.disabled=false;btn.disabled=false;btn.textContent='SUBMIT';
@@ -367,6 +372,7 @@ GAMES.social={
 // ---- host helpers ----
 function startVote(H,S,i){
   S.pi=i;S.part='A';S.ph='a_vote';S.pr=S._prm[i][0];S.ti='';S.vtd={};S.vc={};S.vv={};S.win=[];S.sc={};S._votes={};
+  H.players.forEach(p=>{S._priv[p.id]={mine:-1,vote:-1,pick:-1};});
   S.pd=A_VOTE;S.pe=S.t+A_VOTE;
 }
 function revealVote(H,S){
@@ -382,7 +388,7 @@ function revealVote(H,S){
 }
 function startWrite(H,S,i){
   S.pi=i;S.part='B';S.ph='b_write';S.q=S._fct[i].q;S.sub={};S.opts=[];S.pk={};S.rv=null;S.step=0;S._fake={};S._picks={};S._au=[];S._real=-1;
-  H.players.forEach(p=>S._priv[p.id]={mine:-1});
+  H.players.forEach(p=>S._priv[p.id]={mine:-1,vote:-1,pick:-1});
   S.pd=B_WRITE;S.pe=S.t+B_WRITE;
 }
 function startPick(H,S){
@@ -400,7 +406,7 @@ function startPick(H,S){
   S.opts=opts.map((o,i)=>({i,t:o.t}));
   S._au=opts.map(o=>o.au);S._real=opts.findIndex(o=>o.real);
   S.pk={};S._picks={};
-  H.players.forEach(p=>{S._priv[p.id]={mine:opts.findIndex(o=>o.au.includes(p.id))};});
+  H.players.forEach(p=>{S._priv[p.id]={mine:opts.findIndex(o=>o.au.includes(p.id)),vote:-1,pick:-1};});
   S.ph='b_pick';S.pd=B_PICK;S.pe=S.t+B_PICK;
 }
 function startReveal(H,S){
@@ -413,14 +419,13 @@ function startReveal(H,S){
     else pk[i].forEach(()=>S._au[i].forEach(a=>gain[a]=(gain[a]||0)+1));
   });
   S._gain=gain;
+  for(const id in gain)S._tot[id]=(S._tot[id]||0)+gain[id];
   const fakes=shuffle(S.opts.map((o,i)=>i).filter(i=>i!==S._real));
   const ord=fakes.concat([S._real]);
   S.rv={opts:S.opts.map((o,i)=>({t:o.t,au:S._au[i],pk:pk[i],real:i===S._real})),ord,fact:f.f,gain};
   S.step=0;S.ph='b_rev';S.pd=0;S.pe=S.t+60;S._nx=S.t+0.9;S._end=1e9;
 }
 function finishReveal(H,S){
-  const g=S._gain||{};
-  for(const id in g)S._tot[id]=(S._tot[id]||0)+g[id];
   S.tot=Object.assign({},S._tot);
   if(S.pi+1<B_N)startWrite(H,S,S.pi+1);
   else{S.over=true;S.hold=0.4;S.ph='done';}

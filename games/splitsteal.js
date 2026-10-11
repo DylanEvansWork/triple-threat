@@ -1,6 +1,6 @@
 // Split or Steal — Golden-Balls-style betrayal. 3 rounds: negotiate (talk + quick chat) -> secretly lock SPLIT/STEAL -> dramatic reveal.
 (function(){
-const POTS=[12,12,24], NEG=22, DEC=8, T0=1.3, GAP=1.25, PAYHOLD=2.6;
+const POTS=[12,12,24], NEG=22, DEC=8, T0=1.3, GAP=1.25, GAPL=1.6, PAYHOLD=2.6, SAINT=5, BONUSHOLD=3.4, MINTALK=6;
 const PRE=[['🤝',"I'm splitting, promise"],['😈',"Don't trust {o}"],['💀','Whoever steals is dead to me'],['🗡️',"I'll steal if you steal"],['🙏','Everyone splits, everyone eats']];
 const EMO=['😂','🔥','💀','🤡','😭','👀'];
 
@@ -39,6 +39,7 @@ function injectStyle(){
 .ss-pre button{min-height:48px;border:0;border-radius:13px;background:#26265a;color:#fff;font-weight:800;font-size:13.5px;line-height:1.15;padding:6px 8px;box-shadow:0 3px 0 #11112b;display:flex;align-items:center;justify-content:center;gap:5px;text-align:left}
 .ss-pre button:active{transform:translateY(2px);box-shadow:0 1px 0 #11112b}
 .ss-pre button.cd{opacity:.45}
+.ss-rdy{min-height:44px;border:0;border-radius:13px;background:#1d3d2c;color:#b9ffd0;font-weight:800;font-size:14px}.ss-rdy.me{background:#12381f;opacity:.7}
 .ss-emo{display:flex;gap:5px}
 .ss-emo button{flex:1;min-height:46px;border:0;border-radius:12px;background:#171734;font-size:24px;padding:0}
 .ss-emo button:active{transform:scale(.9)}
@@ -67,6 +68,19 @@ function injectStyle(){
 @keyframes ssflip{0%{transform:rotateY(90deg) scale(.5)}70%{transform:rotateY(0) scale(1.4)}100%{transform:none}}
 .ss-card .py.win{color:#52ff7a}.ss-card .py.zero{color:#6d6d96}
 .ss-msg{text-align:center;font-size:20px;font-weight:900;line-height:1.2;min-height:50px;display:flex;align-items:center;justify-content:center;padding:0 6px}
+@media (max-height:700px){
+.ss{gap:5px;padding:6px 8px 8px}
+.ss-pot{font-size:40px}.ss-ph b{font-size:20px}
+.ss-c{padding:3px 5px}.ss-c .co{font-size:17px}.ss-c .sh{font-size:10px;min-height:0}
+.ss-pre{gap:4px}.ss-pre button{min-height:40px;font-size:12px;padding:3px 6px}
+.ss-emo button{min-height:36px;font-size:20px}.ss-rdy{min-height:38px;font-size:13px}
+.ss-tbl{font-size:11px;padding:5px 8px;line-height:1.2}
+.ss-ch button{min-height:66px;height:66px;font-size:20px}.ss-ch button i{font-size:28px}
+.ss-lockb{min-height:42px;font-size:16px}
+.ss-pan .ss-emo{display:none}.ss-pan.neg .ss-emo{display:flex}
+.ss-b{font-size:13px;padding:3px 8px}.ss-msg{font-size:16px;min-height:40px}
+.ss-card .fc{font-size:40px}.ss-card .py{font-size:20px}
+}
 .ss-flash{position:absolute;inset:0;pointer-events:none;opacity:0;z-index:3}
 .ss-flash.go{animation:ssfl .5s}
 @keyframes ssfl{0%{opacity:.55}100%{opacity:0}}
@@ -76,13 +90,13 @@ function injectStyle(){
 
 GAMES.splitsteal={
   name:'Split or Steal',emoji:'🤝',tag:'Trust your friends. Then watch them lie to your face.',
-  min:2,max:4,
+  min:3,max:4,
   rules:[
     ['🪙','3 rounds, each with a pot of coins: 12, 12, then a DOUBLE pot of 24.'],
     ['🗣️','TALK! Argue, promise, bluff, beg. Out loud or with the quick-chat buttons.'],
     ['🔒','Then everyone secretly locks in 🤝 SPLIT or 🗡️ STEAL. No take-backs. Then the big reveal.'],
-    ['🧮','All split: share the pot. ONE steals: they grab the WHOLE pot, others get 0. TWO+ steal: stealers get 0 and the splitters share it. All steal: nobody gets anything.'],
-    ['🏆','Most coins after 3 rounds wins. Every steal earns a 🗡️ shame badge.']
+    ['🧮','All split: share the pot. ONE steals: they grab the WHOLE pot, others get 0. TWO or more steal: the stealers get 0 and the splitters share the pot. All steal: nobody gets anything.'],
+    ['😇','Most coins after 3 rounds wins. Never stole all game? You get a +5 SAINT BONUS at the end. Every steal earns a 🗡️ shame badge.']
   ],
   ctrl:'Tap quick-chat buttons while talking. Then tap SPLIT or STEAL and press LOCK IN.',
   win:'Total coins after 3 rounds.',
@@ -91,14 +105,15 @@ GAMES.splitsteal={
   init(H){
     const tot={},bet={};H.players.forEach(p=>{tot[p.id]=0;bet[p.id]=0;});
     return{rd:0,pot:POTS[0],stage:'neg',sa:0,sd:NEG,tot,bet,lock:{},part:H.players.filter(p=>!p.aw).map(p=>p.id),chat:[],cq:0,
-      rev:{},revN:0,lastRev:-1,pay:null,msg:'',pa:0,au:{},_dec:{},_sel:{},_ch:{},_pay:{},_ord:[],_chatT:{}};
+      rev:{},revN:0,lastRev:-1,pay:null,msg:'',pa:0,au:{},rdy:{},bonus:null,_dec:{},_sel:{},_ch:{},_pay:{},_ord:[],_chatT:{},_priv:{}};
   },
   tick(H,S,dt){
     if(S.over)return;
     const alive=id=>{const p=H.players.find(p=>p.id===id);return !!p&&!p.aw;};
     const el=S.t-S.sa;
     if(S.stage==='neg'){
-      if(el>=S.sd){S.stage='dec';S.sa=S.t;S.sd=DEC;S.part=H.players.filter(p=>!p.aw).map(p=>p.id);S.lock={};S.au={};S._dec={};S._sel={};}
+      const act=H.players.filter(p=>!p.aw).map(p=>p.id);
+      if(el>=S.sd||(el>=MINTALK&&act.length&&act.every(id=>S.rdy[id]))){S.stage='dec';S.sa=S.t;S.sd=DEC;S.part=act;S.lock={};S.au={};S._dec={};S._sel={};S._priv={};}
     }else if(S.stage==='dec'){
       S.part=S.part.filter(alive);
       if(S.part.every(id=>S._dec[id])||el>=S.sd){
@@ -110,13 +125,14 @@ GAMES.splitsteal={
         else if(st.length===1)pay[st[0]]=S.pot;
         else if(sp.length)sp.forEach(id=>pay[id]=Math.floor(S.pot/sp.length));
         S._ch=ch;S._pay=pay;S._ord=shuffle(S.part);
-        S.stage='rev';S.sa=S.t;S.sd=0;S.rev={};S.revN=0;S.lastRev=-1;S.pay=null;S.msg='';
+        S.stage='rev';S.sa=S.t;S.sd=0;S.rev={};S.revN=0;S.lastRev=-1;S.pay=null;S.msg='';S._priv={};
       }
     }else if(S.stage==='rev'){
-      while(S.revN<S._ord.length&&el>=T0+S.revN*GAP){
+      const gap=S.rd>=POTS.length-1?GAPL:GAP;
+      while(S.revN<S._ord.length&&el>=T0+S.revN*gap){
         const id=S._ord[S.revN];S.rev[id]=S._ch[id];S.lastRev=id;if(S._ch[id]==='T')S.bet[id]++;S.revN++;
       }
-      if(!S.pay&&S.revN>=S._ord.length&&el>=T0+S._ord.length*GAP+.5){
+      if(!S.pay&&S.revN>=S._ord.length&&el>=T0+S._ord.length*gap+.5){
         S.pay=S._pay;S.pa=S.t;
         const nm=id=>(H.players.find(p=>p.id===id)||{name:'?'}).name;
         for(const id in S._pay)S.tot[id]=(S.tot[id]||0)+S._pay[id];
@@ -128,9 +144,17 @@ GAMES.splitsteal={
         else S.msg=st.map(nm).join(' & ')+' both stole, so they get NOTHING. 😂 Splitters share the pot.';
       }
       if(S.pay&&S.t-S.pa>=PAYHOLD){
-        if(S.rd>=POTS.length-1){S.over=true;S.hold=.4;}
-        else{S.rd++;S.pot=POTS[S.rd];S.stage='neg';S.sa=S.t;S.sd=NEG;S.lock={};S.rev={};S.revN=0;S.pay=null;S.msg='';S.chat=[];S.part=H.players.filter(p=>!p.aw).map(p=>p.id);}
+        if(S.rd>=POTS.length-1){
+          const nm=id=>(H.players.find(p=>p.id===id)||{name:'?'}).name;
+          const saints=H.players.filter(p=>!p.aw&&!S.bet[p.id]).map(p=>p.id);
+          S.bonus={};saints.forEach(id=>{S.bonus[id]=SAINT;S.tot[id]=(S.tot[id]||0)+SAINT;});
+          S.stage='bonus';S.sa=S.t;S.sd=0;
+          S.msg=saints.length?('😇 SAINT BONUS +'+SAINT+': '+saints.map(nm).join(', ')+' never stole!'):'Nobody is a saint. Not one. 🗡️🗡️🗡️';
+        }
+        else{S.rd++;S.pot=POTS[S.rd];S.stage='neg';S.sa=S.t;S.sd=NEG;S.lock={};S.rev={};S.revN=0;S.pay=null;S.msg='';S.chat=[];S.rdy={};S._priv={};S.part=H.players.filter(p=>!p.aw).map(p=>p.id);}
       }
+    }else if(S.stage==='bonus'){
+      if(el>=BONUSHOLD){S.over=true;S.hold=.3;}
     }
   },
   act(H,S,pid,m){
@@ -149,18 +173,20 @@ GAMES.splitsteal={
       }
       if(tx==null)return;
       S._chatT[pid]=S.t;S.chat.push({q:++S.cq,id:pid,tx,em});if(S.chat.length>8)S.chat.shift();
+    }else if(m.k==='rdy'){
+      if(S.stage==='neg'&&S.t-S.sa>=2)S.rdy[pid]=true;
     }else if(m.k==='pick'||m.k==='lock'){
       if(S.stage!=='dec'||!S.part.includes(pid)||S._dec[pid])return;
       if(m.c!=='S'&&m.c!=='T')return;
-      if(m.k==='pick')S._sel[pid]=m.c;
-      else{S._dec[pid]=m.c;S._sel[pid]=m.c;S.lock[pid]=true;}
+      if(m.k==='pick'){S._sel[pid]=m.c;S._priv[pid]={c:m.c,l:0};}
+      else{S._dec[pid]=m.c;S._sel[pid]=m.c;S.lock[pid]=true;S._priv[pid]={c:m.c,l:1};}
     }
   },
   val(S,id){return S.tot[id]||0;},
 
   mk(c){
-    let root,top,potEl,rdEl,phEl,tbI,plEl,feed,pans={},tblEl,btnS,btnT,lockB,cardsEl,msgEl,flash,hintEl;
-    let paint=()=>{},sel=null,locked=false,lastQ=0,lastRd=-1,lastStage='',plKey='',chips={},seen={},lastSec=-1,payShown=false;
+    let rdyB,root,top,potEl,rdEl,phEl,tbI,plEl,feed,pans={},tblEl,btnS,btnT,lockB,cardsEl,msgEl,flash,hintEl;
+    let paint=()=>{},sel=null,locked=false,lastQ=0,lastRd=-1,lastStage='',plKey='',chips={},seen={},lastSec=-1,payShown=false,lastRoll=0;
     const S0=()=>c.R()&&c.R().S;
     const bubble=(m)=>{
       const b=E('div','ss-b'+(m.id===c.me()?' me':'')+(m.em?' em':''));b.style.setProperty('--c',c.col(m.id));
@@ -181,17 +207,21 @@ GAMES.splitsteal={
       if(m>=2)L.push(['🗡️','1 steals: thief takes <b>'+pot+'</b>, the rest get 0']);
       for(let k=2;k<m;k++)L.push(['⚔️',k+' steal: they get 0. '+(m-k>1?('The '+(m-k)+' splitters get <b>'+Math.floor(pot/(m-k))+'</b> each'):'The splitter gets <b>'+pot+'</b>')]);
       if(m>=2)L.push(['💀','All steal: nobody gets anything']);
+      L.push(['😇',S.bet[c.me()]?'Saint bonus (+5 for never stealing): <b>lost</b>':'Saint bonus: stay clean all game for <b>+5</b>']);
       tblEl.innerHTML='';
       L.forEach(r=>{const d=document.createElement('div');d.innerHTML='<span>'+r[0]+'</span><span>'+r[1]+'</span>';tblEl.append(d);});
-      tblEl.dataset.k=m+'-'+pot;
+      tblEl.dataset.k=m+'-'+pot+'-'+(S.bet[c.me()]||0);
     }
     function setStage(S){
       pans.neg.classList.toggle('on',S.stage==='neg');
       pans.dec.classList.toggle('on',S.stage==='dec');
-      feed.style.display=S.stage==='rev'?'none':'flex';
-      cardsEl.parentNode.style.display=S.stage==='rev'?'flex':'none';
+      const revView=S.stage==='rev'||S.stage==='bonus';
+      feed.style.display=revView?'none':'flex';
+      cardsEl.parentNode.style.display=revView?'flex':'none';
+      
       if(S.stage==='dec'){sel=null;locked=false;table(S);paint();}
-      if(S.stage==='rev'){seen={};payShown=false;cardsEl.innerHTML='';}
+      if(S.stage==='rev'){seen={};payShown=false;cardsEl.innerHTML='';cardsEl.dataset.k='';}
+      if(S.stage==='bonus'){sfx.win();buzz([40,30,40,30,60]);}
       lastSec=-1;
     }
     function renderCards(S){
@@ -214,6 +244,7 @@ GAMES.splitsteal={
         else if(!S.pay){py.innerHTML='&nbsp;';py.className='py';}
       });
       if(S.pay&&!payShown){payShown=true;const mine=S.pay[c.me()];if(mine>0){sfx.win();buzz([40,30,40]);}else sfx.bad();}
+      if(S.stage==='bonus'&&S.bonus)cardsEl.querySelectorAll('.ss-card').forEach(d=>{const id=+d.dataset.id;if(S.bonus[id]){const py=d.querySelector('.py');py.textContent='😇 +'+S.bonus[id];py.className='py win';d.style.boxShadow='0 0 22px #ffd23f';}});
       msgEl.textContent=S.pay?S.msg:(S.revN===0?'🥁 Locks are in…':'');
     }
     return{
@@ -229,9 +260,12 @@ GAMES.splitsteal={
         const rv=E('div','ss-rv');rv.style.cssText='display:none;flex:1;min-height:0;flex-direction:column;gap:6px';
         cardsEl=E('div','ss-cards');msgEl=E('div','ss-msg');rv.append(cardsEl,msgEl);
         // negotiate panel
-        pans.neg=E('div','ss-pan');pans.neg.append(E('div','ss-pre'));
+        pans.neg=E('div','ss-pan neg');pans.neg.append(E('div','ss-pre'));
         const em=E('div','ss-emo');EMO.forEach(e=>{const b=document.createElement('button');b.textContent=e;b.addEventListener('pointerdown',ev=>{ev.preventDefault();sfx.tap();c.act({k:'chat',e});});em.append(b);});
         pans.neg.append(em);
+        rdyB=E('button','ss-rdy','✅ Done talking — ready to decide');
+        rdyB.addEventListener('pointerdown',e=>{e.preventDefault();const S=S0();if(!S||S.stage!=='neg')return;sfx.tap();c.act({k:'rdy'});});
+        pans.neg.append(rdyB);
         // decide panel
         pans.dec=E('div','ss-pan');tblEl=E('div','ss-tbl');
         const ch=E('div','ss-ch');btnS=E('button','ss-s','<i>🤝</i>SPLIT');btnT=E('button','ss-t','<i>🗡️</i>STEAL');ch.append(btnS,btnT);
@@ -267,20 +301,23 @@ GAMES.splitsteal={
           const b=S.bet[p.id]||0;d.querySelector('.sh').textContent=b?'🗡️ ×'+b+' betrayal'+(b>1?'s':''):' ';
           d.querySelector('.lk').textContent=(S.stage==='dec'&&S.lock[p.id])?'🔒':'';}
         if(S.stage!==lastStage){lastStage=S.stage;setStage(S);if(S.stage==='dec'){sfx.go();buzz(50);}}
-        if(S.stage==='dec'&&tblEl.dataset.k!==S.part.length+'-'+S.pot)table(S);
+        if(S.stage==='dec'){const pv=c.priv();if(pv){if(pv.l&&!locked){locked=true;sel=pv.c;paint();}else if(!sel&&pv.c){sel=pv.c;paint();}}}
+        if(S.stage==='neg'){const act=R.pl.filter(p=>!p.aw),n=act.filter(p=>S.rdy[p.id]).length,mine=!!S.rdy[c.me()];rdyB.textContent=mine?('✅ Waiting for the others… ('+n+'/'+act.length+')'):('✅ Done talking — ready to decide ('+n+'/'+act.length+')');rdyB.classList.toggle('me',mine);}
+        if(S.stage==='dec'&&tblEl.dataset.k!==S.part.length+'-'+S.pot+'-'+(S.bet[c.me()]||0))table(S);
         // chat
         for(const m of S.chat){if(m.q>lastQ){lastQ=m.q;feed.append(bubble(m));if(m.id!==c.me())sfx.tap();}}
         const bs=feed.querySelectorAll('.ss-b');for(let i=0;i<bs.length-(S.stage==='dec'?3:6);i++)bs[i].remove();
         hintEl.style.display=feed.querySelector('.ss-b')?'none':'block';
-        if(S.stage==='rev')renderCards(S);
+        if(S.stage==='rev'||S.stage==='bonus')renderCards(S);
       },
       frame(){
         const S=S0();if(!S||!root)return;
-        const el=c.t()-S.sa;let left=0;
+        const el=c.t()-S.sa;let left=0;const t0b=performance.now()/1000;
         if(S.stage==='neg'||S.stage==='dec'){left=Math.max(0,S.sd-el);tbI.style.width=(100*clamp(left/S.sd,0,1))+'%';
           const sc=Math.ceil(left);phEl.innerHTML=(S.stage==='neg'?'🗣️ TALK':'🔒 DECIDE')+'<b>'+sc+'</b>';
           if(sc!==lastSec){lastSec=sc;if(sc<=5&&sc>0)beep(S.stage==='dec'?520:880,.05,'square',.06);}}
-        else{tbI.style.width='100%';phEl.innerHTML='🥁 REVEAL<b>&nbsp;</b>';}
+        else{tbI.style.width='100%';phEl.innerHTML=(S.stage==='bonus'?'😇 BONUS':'🥁 REVEAL')+'<b>&nbsp;</b>';
+          if(S.stage==='rev'&&S.revN<S.part.length&&t0b-lastRoll>.38){lastRoll=t0b;beep(110+S.revN*30,.09,'triangle',.12);}}
       },
       stop(){}
     };

@@ -114,7 +114,8 @@ GAMES.pong=(function(){
       S.b.x=Math.round(S.b.x*1e4)/1e4;S.b.y=Math.round(S.b.y*1e4)/1e4;
     },
     act(H,S,pid,m){
-      if(m.k!=='p'||S.over)return;
+      if(m&&m.k==='ping'){H.emit({k:'pong',ts:+m.ts||0},pid);return;}
+      if(!m||m.k!=='p'||S.over)return;
       const k=S.ord.indexOf(pid);if(k<0||!(S.lv[pid]>0))return;
       const u=+m.u;if(!isFinite(u))return;
       S.pu[k]=Math.round(cl(u,-1,1)*1e3)/1e3;
@@ -138,7 +139,7 @@ GAMES.pong=(function(){
     // ---------------- client ----------------
     mk(c){
       let S=null,root,cvo,g,me=-1,running=false,sendT=0;
-      let myU=0,dirty=false,drag=null,pr=[],snap=null,snapId=0,off={x:0,y:0},rp={x:0,y:0,ok:false},trail=[];
+      let rv={vx:0,vy:0},rtt=0,pingT=0,myU=0,dirty=false,drag=null,pr=[],snap=null,snapId=0,off={x:0,y:0},rp={x:0,y:0,ok:false},trail=[];
       let parts=[],flash=[],shake=0,msg='',msgT=0,msgCol='#fff',bigMsg='',bigT=0,hintT=0,lastLocalHit=0,hitFired={},lastFrame=performance.now(),overShown=false;
       let V=null;const dbg=window.__ttPong={};
       const edgeOf=pid=>S?S.ord.indexOf(pid):-1;
@@ -172,7 +173,7 @@ GAMES.pong=(function(){
         trail.length=0;rp.ok=false;
       }
       function aim(){ // used by bots/tests: u that would catch the ball
-        if(!S||!V)return 0;const G=V.G,e=G.e[V.mk],b=snap||S.b;
+        if(!S||!V)return 0;const G=V.G,e=G.e[V.mk],b=snap?{x:rp.x,y:rp.y,vx:rv.vx,vy:rv.vy}:S.b;   // rendered (latency-led) ball
         const vo=b.vx*e.ox+b.vy*e.oy;let x=b.x,y=b.y;
         if(vo>0.01){const t=(e.mx*e.ox+e.my*e.oy-(b.x*e.ox+b.y*e.oy))/vo;x=b.x+b.vx*t;y=b.y+b.vy*t;}
         const s=(x-e.mx)*e.tx+(y-e.my)*e.ty;return cl(s/G.rng,-1,1);
@@ -292,21 +293,24 @@ GAMES.pong=(function(){
           root.addEventListener('pointerup',release);root.addEventListener('pointercancel',release);
         },
         start(){
-          running=true;sendT=setInterval(sendNow,30);
+          running=true;sendT=setInterval(sendNow,30);pingT=setInterval(()=>{if(c.R().ph==='play')c.act({k:'ping',ts:performance.now()});},1000);
           dirty=true;sendNow();
         },
-        stop(){running=false;clearInterval(sendT);window.__ttPong={};},
+        stop(){running=false;clearInterval(sendT);clearInterval(pingT);window.__ttPong={};},
         update(s,R){
           const first=!S;S=s;
           if(first){me=edgeOf(c.me());pr=s.pu.slice();myU=s.pu[me]||0;}
           for(let k=0;k<s.N;k++)if(pr[k]===undefined)pr[k]=s.pu[k]||0;
           const prev=snap;snap={x:s.b.x,y:s.b.y,vx:s.b.vx,vy:s.b.vy,cap:s.b.cap,at:performance.now(),id:++snapId};
-          if(rp.ok&&s.sv<=0&&prev&&Math.hypot(rp.x-s.b.x,rp.y-s.b.y)<0.45){off={x:rp.x-s.b.x,y:rp.y-s.b.y};}else{off={x:0,y:0};rp.x=s.b.x;rp.y=s.b.y;}
+          let t0={x:s.b.x,y:s.b.y};
+          if(s.sv<=0){const ld=Math.min(.4,rtt/1000*0.9);if(ld>0){const sm={x:s.b.x,y:s.b.y,vx:s.b.vx,vy:s.b.vy,cap:s.b.cap},G0=geo(s.N);stepBall(sm,ld,G0,s.ord.map(id=>id>=0&&s.lv[id]>0),s.ord.map((id,k)=>id===c.me()?myU:pr[k]));t0=sm;}}
+          if(rp.ok&&s.sv<=0&&prev&&Math.hypot(rp.x-t0.x,rp.y-t0.y)<0.45){off={x:rp.x-t0.x,y:rp.y-t0.y};}else{off={x:0,y:0};rp.x=t0.x;rp.y=t0.y;}
           rp.ok=true;
           if(s.over&&!overShown){overShown=true;if(s.win===c.me())sfx.win();else sfx.boom();}
         },
         event(m){
-          if(m.k==='hit'){if(m.e===(V&&V.mk)&&performance.now()-lastLocalHit<260)return;onHit(m.e,m.x,m.y,m.sp,m.who,false);}
+          if(m.k==='hit'){if(m.e===(V&&V.mk)&&performance.now()-lastLocalHit<260+rtt)return;onHit(m.e,m.x,m.y,m.sp,m.who,false);}
+          else if(m.k==='pong'){const d=performance.now()-m.ts;if(d>=0&&d<3000)rtt=rtt?rtt*.7+d*.3:d;}
           else if(m.k==='goal')onGoal(m);
           else if(m.k==='wall'){beep(180,.04,'triangle',.05);}
           else if(m.k==='serve'){trail.length=0;rp.ok=false;}
@@ -320,12 +324,12 @@ GAMES.pong=(function(){
           // ball: re-run host physics forward from the latest snapshot, then blend out the small correction
           if(S.sv>0||!snap){rp.x=S.b.x;rp.y=S.b.y;}
           else{
-            const el=Math.min(.3,(now-snap.at)/1000),sim={x:snap.x,y:snap.y,vx:snap.vx,vy:snap.vy,cap:snap.cap};
+            const el=Math.min(.3,(now-snap.at)/1000)+Math.min(.4,rtt/1000*0.9),sim={x:snap.x,y:snap.y,vx:snap.vx,vy:snap.vy,cap:snap.cap};
             const alive=S.ord.map(id=>id>=0&&S.lv[id]>0),pu=S.ord.map((id,k)=>id===c.me()?myU:pr[k]);
             stepBall(sim,el,G,alive,pu,{hit(k,o,spd){
               if(k===v.mk&&!hitFired[snap.id]){hitFired[snap.id]=1;lastLocalHit=now;onHit(k,sim.x,sim.y,spd,c.me(),true);}
             }});
-            const kd=Math.exp(-el*9);rp.x=sim.x+off.x*kd;rp.y=sim.y+off.y*kd;
+            rv.vx=sim.vx;rv.vy=sim.vy;const kd=Math.exp(-Math.min(.3,(now-snap.at)/1000)*9);rp.x=sim.x+off.x*kd;rp.y=sim.y+off.y*kd;
           }
           if(S.sv<=0&&running){const [sx,sy]=v.P(rp.x,rp.y);trail.push({x:sx,y:sy,t:now,col:S.bc>=0?c.col(S.bc):'#ffffff'});if(trail.length>26)trail.shift();}
           else trail.length=0;

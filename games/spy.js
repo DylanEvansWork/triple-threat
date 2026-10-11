@@ -2,7 +2,7 @@
 (function(){
 'use strict';
 const WW=100,WH=120,RAD=2.7;                    // arena (world units) and dot radius
-const VMAX=8.4,ACC=28;                          // top speed + acceleration limit: identical for bots and players
+const VMAX=7.2,ACC=26,TURN=2.2;                          // top speed, acceleration and turn-rate limits: identical for bots and players
 const COOL=1.2,LOCKT=2.0,GRACE=3.0,HITR=7.4;    // reload, bot-misfire lockout, no-shooting opening, tap forgiveness radius
 const LEN=72;                                   // game over (reveal) at 72s, hold 3s -> engine ends at 75s
 const r2=v=>Math.round(v*100)/100;
@@ -12,20 +12,21 @@ const angd=(a,b)=>{let d=a-b;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*
 // ---------------- bot brain: smooth wander, pauses, short stints of clustering ----------------
 function botInit(d){
   d.mode=Math.random()<.3?'pause':'walk';d.th=rnd(0,6.283);d.tr=rnd(-.6,.6);d.sp=rnd(3.8,7.4);
-  d.tm=d.mode==='pause'?rnd(.3,2.2):rnd(2,7);d.fr=0;
+  d.tm=d.mode==='pause'?rnd(.3,2.2):rnd(2,7);d.fr=0;d.jog=Math.random()<.5;d.sp=d.jog?VMAX:rnd(3.2,VMAX-1);d.cv=pick([.25,.25,.7,1.3]);
+  if(d.careless==null)d.careless=Math.random()<.45;
 }
 function botNext(d,alive){
   const r=Math.random();
   if(r<.32){d.mode='pause';d.tm=rnd(.4,2.8);}
   else if(r<.5&&alive.length>3){const f=alive[Math.floor(Math.random()*alive.length)];if(f&&f.id!==d.id){d.mode='follow';d.fr=f.id;d.tm=rnd(6,12);}else{d.mode='walk';d.tm=rnd(2,6);}}
-  else{d.mode='walk';d.tm=rnd(2.5,7);d.sp=rnd(3.8,7.6);d.tr=rnd(-1.6,1.6);}
+  else{d.mode='walk';d.tm=rnd(2.5,7);d.jog=Math.random()<.5;d.sp=d.jog?VMAX:rnd(3.2,VMAX-1);d.cv=pick([.25,.25,.7,1.3]);d.tr=rnd(-1.6,1.6)*Math.min(1,d.cv+.3);}
 }
 function botStep(d,dt,alive){
   d.tm-=dt;let want=0;
   if(d.mode==='pause'){if(d.tm<=0)botNext(d,alive);}
   else{
-    d.tr+=-d.tr*.9*dt+gauss()*1.5*Math.sqrt(dt);d.tr=clamp(d.tr,-1.7,1.7);
-    d.sp=clamp(d.sp+gauss()*.9*dt,3.4,7.8);want=d.sp;
+    d.tr+=-d.tr*.9*dt+gauss()*1.5*(d.cv||.7)*Math.sqrt(dt);d.tr=clamp(d.tr,-1.9,1.9);
+    if(!d.jog)d.sp=clamp(d.sp+gauss()*.9*dt,3,VMAX-.5);want=d.sp;
     if(d.mode==='follow'||d.mode==='dwell'){
       const f=alive.find(o=>o.id===d.fr);
       if(!f)d.mode='walk';
@@ -38,10 +39,10 @@ function botStep(d,dt,alive){
     d.th+=d.tr*dt;
   }
   // soft wall avoidance (turn away smoothly, like a person who sees the edge coming)
-  const M=8;let px=0,py=0;
+  const M=d.careless?1.5:8;let px=0,py=0;
   if(d.x<M)px+=(M-d.x)/M;if(d.x>WW-M)px-=(d.x-(WW-M))/M;if(d.y<M)py+=(M-d.y)/M;if(d.y>WH-M)py-=(d.y-(WH-M))/M;
   if(px||py){const m=Math.min(1,Math.hypot(px,py));d.th+=angd(Math.atan2(py,px),d.th)*clamp(m*4*dt,0,.45);}
-  return[Math.cos(d.th)*want,Math.sin(d.th)*want];
+  return[want,d.th];
 }
 
 GAMES.spy={
@@ -65,11 +66,11 @@ GAMES.spy={
     const spot=()=>{for(let k=0;k<60;k++){const x=rnd(9,WW-9),y=rnd(9,WH-9);if(dots.every(d=>Math.hypot(d.x-x,d.y-y)>7.5))return[x,y];}return[rnd(9,WW-9),rnd(9,WH-9)];};
     for(let i=0;i<tot;i++){
       const[x,y]=spot(),pl=i<n?H.players[i]:null;
-      const d={id:ids[i],x,y,vx:0,vy:0,pid:pl?pl.id:-1,alive:true};botInit(d);
+      const d={id:ids[i],x,y,vx:0,vy:0,pid:pl?pl.id:-1,alive:true,cs:0,hd:rnd(0,6.283),wb:0};botInit(d);if(d.pid<0&&d.mode==='walk'){d.cs=d.sp;d.hd=d.th;}
       if(pl){P[pl.id]={a:1,k:0,w:0,cd:0,lk:0,dt:0};priv[pl.id]={me:d.id};all[d.id]=pl.id;}
       dots.push(d);
     }
-    return{_dots:dots,_in:{},_all:all,_priv:priv,pl:P,d:[],crowd:tot,rev:null};
+    return{_dots:dots,_in:{},_all:all,_priv:priv,_dis:rnd(17,23),pl:P,d:[],crowd:tot,rev:null};
   },
   begin(H,S){S.t=0;},
   tick(H,S,dt){
@@ -77,23 +78,39 @@ GAMES.spy={
     // away players: their dot quietly becomes a bot (no tell), they count as out
     for(const p of H.players){const P=S.pl[p.id];if(p.aw&&P&&P.a){P.a=0;P.dt=S.t;const d=dots.find(d=>d.pid===p.id);if(d){d.pid=-1;botInit(d);}S._priv[p.id]={ghost:1,all:S._all};}}
     for(const d of alive){
-      let dvx,dvy;
+      let dspd,dhd;
       if(d.pid>=0){
         const inp=S._in[d.pid];let x=0,y=0;
         if(inp&&S.t-inp.t<4){x=inp.x;y=inp.y;}
         const m=Math.hypot(x,y);
-        if(m<.12){dvx=0;dvy=0;}else{const k=Math.min(1,m);dvx=x/m*k*VMAX;dvy=y/m*k*VMAX;}
-      }else{const v=botStep(d,dt,alive);dvx=v[0];dvy=v[1];}
-      let ax=dvx-d.vx,ay=dvy-d.vy;const al=Math.hypot(ax,ay),mx=ACC*dt;
-      if(al>mx){ax*=mx/al;ay*=mx/al;}
-      d.vx+=ax;d.vy+=ay;d.x+=d.vx*dt;d.y+=d.vy*dt;
-      if(d.x<RAD){d.x=RAD;if(d.vx<0)d.vx=0;}if(d.x>WW-RAD){d.x=WW-RAD;if(d.vx>0)d.vx=0;}
-      if(d.y<RAD){d.y=RAD;if(d.vy<0)d.vy=0;}if(d.y>WH-RAD){d.y=WH-RAD;if(d.vy>0)d.vy=0;}
+        if(m<.12){dspd=0;dhd=d.hd;}else{
+          dspd=Math.min(1,m)*VMAX;dhd=Math.atan2(y,x);
+          // rubber walls: a dot steered into the edge slides away from it (bots do the same), so nobody gets stuck hugging a wall
+          const M=9;let px=0,py=0;if(d.x<M)px+=(M-d.x)/M;if(d.x>WW-M)px-=(d.x-(WW-M))/M;if(d.y<M)py+=(M-d.y)/M;if(d.y>WH-M)py-=(d.y-(WH-M))/M;
+          if((px||py)&&Math.cos(dhd)*px+Math.sin(dhd)*py<0){const k=Math.min(1,Math.hypot(px,py));dhd+=angd(Math.atan2(py,px),dhd)*k*.85;}
+        }
+      }else{const v=botStep(d,dt,alive);dspd=v[0];dhd=v[1];}
+      // identical physics for everyone: acceleration-limited speed, turn-rate-limited heading, a little natural wobble
+      d.cs+=clamp(dspd-d.cs,-ACC*dt,ACC*dt);
+      if(dspd>.3){if(d.cs<.8)d.hd=dhd;else d.hd+=clamp(angd(dhd,d.hd),-TURN*dt,TURN*dt);}
+      d.wb+=-d.wb*1.2*dt+gauss()*.35*Math.sqrt(dt);d.hd+=d.wb*dt*(d.cs>.8?1:0);
+      let vx=Math.cos(d.hd)*d.cs,vy=Math.sin(d.hd)*d.cs,hit=false;
+      d.x+=vx*dt;d.y+=vy*dt;
+      if(d.x<RAD){d.x=RAD;if(vx<0){vx=0;hit=true;}}if(d.x>WW-RAD){d.x=WW-RAD;if(vx>0){vx=0;hit=true;}}
+      if(d.y<RAD){d.y=RAD;if(vy<0){vy=0;hit=true;}}if(d.y>WH-RAD){d.y=WH-RAD;if(vy>0){vy=0;hit=true;}}
+      if(hit){d.cs=Math.hypot(vx,vy);if(d.cs>.3)d.hd=Math.atan2(vy,vx);if(d.pid<0){d.th=d.hd;d.tr=0;if(d.mode==='walk'&&d.tm<1)d.tm=rnd(1,3);}}
+      d.vx=vx;d.vy=vy;
     }
     // soft separation so nobody sits exactly on someone else
     for(let i=0;i<alive.length;i++)for(let j=i+1;j<alive.length;j++){
       const a=alive[i],b=alive[j];let dx=b.x-a.x,dy=b.y-a.y;const dist=Math.hypot(dx,dy),mn=RAD*1.9;
       if(dist<mn){if(dist<.001){dx=Math.random()-.5;dy=Math.random()-.5;}const k=(mn-dist)/2/(dist||1);a.x-=dx*k;a.y-=dy*k;b.x+=dx*k;b.y+=dy*k;}
+    }
+    // the crowd thins out: every few seconds a random bot wanders off (poof) so the hunt tightens
+    if(!S.over&&S.t>=S._dis){
+      const bots=alive.filter(d=>d.pid<0);
+      if(bots.length>5){const d=bots[Math.floor(Math.random()*bots.length)];d.alive=false;alive.splice(alive.indexOf(d),1);H.emit({e:'pf',x:r2(d.x),y:r2(d.y),id:d.id});}
+      S._dis=S.t+rnd(5,8);
     }
     S.d=alive.map(d=>[d.id,r2(d.x),r2(d.y),r2(d.vx),r2(d.vy)]).sort((a,b)=>a[0]-b[0]);S.crowd=S.d.length;
     if(!S.over){
@@ -256,6 +273,7 @@ GAMES.spy={
           const[px,py]=w2cv(o.x,o.y),pulse=.72+.28*Math.sin(now/230);
           g.save();g.globalAlpha=strong?1:pulse;g.strokeStyle=col;g.lineWidth=strong?3.2:2.4;g.shadowColor=col;g.shadowBlur=strong?16:11;
           g.beginPath();g.arc(px,py,rp+4.5+(strong?1.5:0),0,6.283);g.stroke();g.restore();
+          if(!strong&&!gh&&o.id===me&&c.t()<GRACE+1.5){g.save();g.globalAlpha=clamp(GRACE+1.5-c.t(),0,1);g.fillStyle=col;g.font='900 12px system-ui';g.textAlign='center';g.fillText('YOU',px,py-rp-9);g.restore();}
           if(strong){const p=c.pl(rev[o.id]);if(p){g.fillStyle=col;g.font='900 11px system-ui';g.textAlign='center';g.fillText(p.n,px,py-rp-9);}}
         }
       }
@@ -339,6 +357,7 @@ GAMES.spy={
         }
       },
       event(m){
+        if(m&&m.e==='pf'){dd.delete(m.id);burst(m.x,m.y,'#8d8db8',10,10);return;}
         if(!m||m.e!=='sh')return;
         const by=c.pl(m.by),bcol=c.col(m.by),mine=m.by===c.me();
         rings.push({x:m.x,y:m.y,col:bcol,t:0,r:m.r==='m'?HITR*.7:HITR});

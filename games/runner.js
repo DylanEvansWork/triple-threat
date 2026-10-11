@@ -41,7 +41,7 @@ GAMES.runner={
 
   // ================= HOST =================
   init(H){
-    const pos={};H.players.forEach(p=>{pos[p.id]={x:0,y:0,v:SPEED,f:0,w:[]};});
+    const pos={};H.players.forEach(p=>{pos[p.id]={x:0,y:0,v:SPEED,f:0,w:[],t:0};});
     return{seed:1+Math.floor(Math.random()*1e9),len:LEN,pos,fin:{},endAt:0,_lastItem:{}};
   },
   tick(H,S,dt){
@@ -56,18 +56,21 @@ GAMES.runner={
     if(m.k==='p'){
       if(S.fin[pid]!=null)return;
       const x=+m.x,y=+m.y,v=+m.v,f=+m.f|0;if(!isFinite(x)||!isFinite(y)||!isFinite(v))return;
-      P.x=Math.max(P.x,clamp(r1(x),0,LEN));P.y=clamp(r1(y),-10,40);P.v=clamp(v,0,40);P.f=f&31;
+      const lim=P.x+SPEED*BOOSTM*1.2*Math.max(.1,S.t-(P.t||0))+6;   // plausibility: can't teleport forward
+      P.x=Math.max(P.x,Math.min(clamp(r1(x),0,LEN),lim));P.t=S.t;P.y=clamp(r1(y),-10,40);P.v=clamp(v,0,40);P.f=f&31;
       P.w=Array.isArray(m.w)?m.w.slice(0,3).map(q=>+q).filter(q=>isFinite(q)).map(r1):[];
     }else if(m.k==='fin'){
-      if(S.fin[pid]!=null)return;
+      if(S.fin[pid]!=null||P.x<LEN-30)return;   // only believe a finish if the position reports got us to the line
       let ft=+m.ft;if(!isFinite(ft))ft=S.t;ft=clamp(ft,LEN/(SPEED*BOOSTM)-.5,S.t+.6);
       S.fin[pid]=Math.round(ft*100)/100;P.x=LEN;
       if(!S.endAt)S.endAt=S.t+8;
     }else if(m.k==='item'){
       if(m.i!=='wall'&&m.i!=='fog')return;
-      const to=+m.to,tp=H.players.find(p=>p.id===to);
-      if(!tp||tp.aw||to===pid||S.fin[to]!=null||S.fin[pid]!=null)return;
-      if(S.t-(S._lastItem[pid]||-9)<.7)return;S._lastItem[pid]=S.t;
+      if(S.fin[pid]!=null)return;
+      const ok=id=>{const q=H.players.find(p=>p.id===id);return q&&!q.aw&&id!==pid&&S.fin[id]==null;};
+      let to=+m.to;
+      if(!ok(to)){const alt=H.players.filter(p=>ok(p.id)).sort((a,b)=>S.pos[b.id].x-S.pos[a.id].x)[0];if(!alt)return;to=alt.id;}   // fall back to any runner still racing
+      if(S.t-(S._lastItem[pid]||-9)<.25)return;S._lastItem[pid]=S.t;
       H.emit({e:'it',i:m.i,from:pid,to});
     }
   },
@@ -78,8 +81,8 @@ GAMES.runner={
 
   // ================= CLIENT =================
   mk(c){
-    let cvh,g,root0,itemB,itemE,itemN,tgtT,banner,touch,strips;
-    let S=null,track=null,seed=0,tm=0,started=false,lastTs=performance.now(),acc=0,joyHint=true;
+    let cvh,g,root0,itemB,itemE,itemN,itemFlash,tgtT,banner,touch,strips;
+    let restored=false,S=null,track=null,seed=0,tm=0,started=false,lastTs=performance.now(),acc=0,joyHint=true;
     const me0={x:0,y:0,vy:0,air:false,coy:0,buf:0,hold:false,holdT:0,stun:0,boost:0,shield:false,fog:0,fin:false,ft:0,item:null,jumps:0,hits:0,t:0};
     const sim=me0;let walls=[];let pressed=false,sel=null,downs=new Set(),shakeT=0,parts=[],toasts=[];
     const others={};            // pid -> {x,y,f,w,v,ts,dx,dy}
@@ -90,15 +93,21 @@ GAMES.runner={
       s.textContent=`
 .run-touch{position:absolute;left:0;right:0;bottom:0;touch-action:none}
 .run-strips{position:absolute;left:0;right:0;top:0;touch-action:none}
-.run-item{position:absolute;right:12px;width:96px;height:96px;border-radius:50%;border:4px solid #ffffff40;background:#171734ee;display:flex;flex-direction:column;align-items:center;justify-content:center;touch-action:none;box-shadow:0 6px 0 #0a0a1f;z-index:3}
-.run-item .e{font-size:44px;line-height:1}.run-item .n{font-size:12px;font-weight:900;letter-spacing:1px;margin-top:3px;color:#cfcff0}
-.run-item.has{border-color:#ffd23f;background:linear-gradient(180deg,#3a3a82,#23234a);animation:runpulse .6s infinite alternate}
-.run-item.has:active{transform:translateY(3px);box-shadow:0 2px 0 #0a0a1f}
+.run-touch{z-index:1}.run-strips{z-index:1}
+.run-item{position:absolute;right:0;bottom:10px;width:132px;height:132px;display:flex;align-items:center;justify-content:center;touch-action:none;z-index:30;background:transparent;-webkit-tap-highlight-color:transparent}
+.run-item *{pointer-events:none}
+.run-item .vis{width:104px;height:104px;border-radius:50%;border:4px solid #ffffff40;background:#171734ee;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 6px 0 #0a0a1f;position:relative}
+.run-item .e{font-size:46px;line-height:1}.run-item .n{font-size:12px;font-weight:900;letter-spacing:1px;margin-top:3px;color:#cfcff0}
+.run-item.has .vis{border-color:#ffd23f;background:linear-gradient(180deg,#3a3a82,#23234a);animation:runpulse .6s infinite alternate}
+.run-item.dn .vis{transform:translateY(4px) scale(.94);box-shadow:0 2px 0 #0a0a1f}
+.run-flash{position:absolute;inset:14px;border-radius:50%;background:#fff;opacity:0}
+.run-flash.on{animation:runflash .45s}
+@keyframes runflash{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(1.9)}}
 @keyframes runpulse{from{box-shadow:0 6px 0 #0a0a1f,0 0 0 0 #ffd23f66}to{box-shadow:0 6px 0 #0a0a1f,0 0 22px 4px #ffd23f88}}
-.run-tgt{position:absolute;right:8px;width:112px;text-align:center;font-size:12px;font-weight:900;color:#ffd23f;text-shadow:0 1px 4px #000;pointer-events:none;z-index:3}
-.run-ban{position:absolute;left:12px;right:12px;text-align:center;font-weight:900;font-size:26px;padding:10px;border-radius:16px;background:#0b0b17ee;border:2px solid #ffd23f;display:none;pointer-events:none;z-index:4}
+.run-tgt{position:absolute;right:8px;width:120px;z-index:10;text-align:center;font-size:12px;font-weight:900;color:#ffd23f;text-shadow:0 1px 4px #000;pointer-events:none;z-index:3}
+.run-ban{position:absolute;left:12px;right:12px;text-align:center;font-weight:900;font-size:26px;padding:10px;border-radius:16px;background:#0b0b17ee;border:2px solid #ffd23f;display:none;pointer-events:none;z-index:11}
 .run-ban small{display:block;font-size:13px;font-weight:700;color:#cfcff0}
-.run-toast{position:absolute;left:8px;right:120px;font-size:13px;font-weight:800;display:flex;flex-direction:column;gap:3px;pointer-events:none;z-index:3}
+.run-toast{position:absolute;left:8px;right:140px;font-size:13px;font-weight:800;display:flex;flex-direction:column;gap:3px;pointer-events:none;z-index:10}
 .run-toast div{background:#0b0b17dd;border-left:4px solid var(--c);border-radius:8px;padding:3px 8px;width:fit-content;animation:spyin .25s}
 @keyframes spyin{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}
 `;document.head.append(s);
@@ -113,7 +122,7 @@ GAMES.runner={
       L.strips=ids.map((id,i)=>({id,x:0,y:26+5+i*(sh+5),w:W,h:sh}));
       L.main={x:0,y:topH,w:W,h:mainH};
       touch.style.height=mainH+'px';strips.style.height=topH+'px';
-      itemB.style.bottom='16px';tgtT.style.bottom='116px';banner.style.top=(topH+mainH*.28)+'px';
+      tgtT.style.bottom='140px';banner.style.top=(topH+mainH*.28)+'px';
     }
     const rankOf=()=>{let r=0;for(const id in others){const o=others[id];if(o.live&&o.dx>sim.x)r++;}return r;};
     const cands=()=>c.R().pl.filter(p=>p.id!==c.me()&&!p.aw&&!(S&&S.fin[p.id]!=null));
@@ -182,17 +191,24 @@ GAMES.runner={
     function showFinish(){banner.style.display='block';banner.innerHTML='🏁 FINISHED!<small>waiting for the others…</small>';}
     function updItem(){
       const it=sim.item;itemE.textContent=it?ITEMS[it].e:'📦';itemN.textContent=it?ITEMS[it].n:'NO ITEM';
-      itemB.className='run-item'+(it?' has':'');itemE.style.opacity=it?1:.25;
+      itemB.className='run-item'+(it?' has':'')+(itemB.classList.contains('dn')?' dn':'');itemE.style.opacity=it?1:.25;
     }
+    let lastUse=0;
+    function flashItem(){itemFlash.classList.remove('on');void itemFlash.offsetWidth;itemFlash.classList.add('on');}
     function useItem(){
-      const it=sim.item;if(!it||sim.fin||!started||c.R().ph!=='play')return;
-      if(it==='boost'){sim.boost=BOOST;sfx.go();buzz(25);for(let i=0;i<10;i++)parts.push({x:sim.x-1,y:1.5,vx:rnd(-14,-4),vy:rnd(-2,4),l:.5,t:0,col:'#ffd23f'});}
-      else if(it==='shield'){sim.shield=true;sfx.good();}
+      const now=performance.now();if(now-lastUse<280)return false;       // ignore double-fire (pointer + touch + ghost click)
+      const it=sim.item;
+      if(!started||c.R().ph!=='play'||sim.fin)return false;
+      if(!it){beep(180,.06,'square',.05);return false;}
+      if(it==='boost'){sim.boost=BOOST;sfx.go();buzz(25);toast('⚡ BOOST!');for(let i=0;i<10;i++)parts.push({x:sim.x-1,y:1.5,vx:rnd(-14,-4),vy:rnd(-2,4),l:.5,t:0,col:'#ffd23f'});}
+      else if(it==='shield'){sim.shield=true;sfx.good();buzz(20);toast('🛡️ Shield up!');}
       else{
-        const to=autoTarget(it);if(to==null){toast('Nobody to hit!');return;}
-        c.act({k:'item',i:it,to});sel=null;sfx.tap();buzz(20);
+        const to=autoTarget(it);
+        if(to==null){toast('Nobody to hit right now — item kept');buzz(30);return false;}
+        c.act({k:'item',i:it,to});sel=null;sfx.tap();buzz([20,20,20]);
+        const p=c.pl(to);toast(ITEMS[it].e+' '+(it==='wall'?'Wall':'Fog')+' sent to '+(p?p.n:'?')+'!',to);
       }
-      sim.item=null;updItem();
+      lastUse=now;flashItem();sim.item=null;updItem();return true;
     }
     function ev(m){
       if(!m||m.e!=='it')return;
@@ -292,17 +308,21 @@ GAMES.runner={
     }
 
     return{
-      dbg:{sim,get track(){return track;},walls:()=>walls,get touch(){return touch;},get item(){return itemB;},strips:()=>L.strips,others:()=>others,rank:rankOf},
+      dbg:{give:it=>{sim.item=it;updItem();},sim,get track(){return track;},walls:()=>walls,get touch(){return touch;},get item(){return itemB;},strips:()=>L.strips,others:()=>others,rank:rankOf},
       mount(root){
         style();root0=root;cvh=mkCanvas(root);g=cvh.g;cvh.cv.style.pointerEvents='none';
         strips=E('div','run-strips');touch=E('div','run-touch');
-        itemB=E('div','run-item','<div class="e">📦</div><div class="n">NO ITEM</div>');itemE=itemB.firstChild;itemN=itemB.lastChild;
+        itemB=E('div','run-item','<div class="vis"><div class="e">📦</div><div class="n">NO ITEM</div><div class="run-flash"></div></div>');const vis=itemB.firstChild;itemE=vis.children[0];itemN=vis.children[1];itemFlash=vis.children[2];
         tgtT=E('div','run-tgt');banner=E('div','run-ban');const tw=E('div','run-toast');tw.style.bottom='16px';
-        root.append(strips,touch,tw,itemB,tgtT,banner);
+        root.append(strips,touch,tw,tgtT,banner,itemB);
         const down=e=>{if(!started||sim.fin||c.R().ph!=='play')return;e.preventDefault();downs.add(e.pointerId);pressed=true;sim.hold=true;try{touch.setPointerCapture(e.pointerId);}catch(x){}};
         const up=e=>{downs.delete(e.pointerId);if(!downs.size)sim.hold=false;};
         touch.addEventListener('pointerdown',down);touch.addEventListener('pointerup',up);touch.addEventListener('pointercancel',up);touch.addEventListener('lostpointercapture',up);
-        itemB.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();useItem();});
+        itemB.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();itemB.classList.add('dn');useItem();});
+        for(const ev2 of['pointerup','pointercancel','pointerleave'])itemB.addEventListener(ev2,()=>itemB.classList.remove('dn'));
+        itemB.addEventListener('touchstart',e=>{e.preventDefault();e.stopPropagation();itemB.classList.add('dn');useItem();},{passive:false});
+        itemB.addEventListener('touchend',e=>{e.preventDefault();itemB.classList.remove('dn');},{passive:false});
+        itemB.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();useItem();});
         strips.addEventListener('pointerdown',e=>{
           const r=strips.getBoundingClientRect(),y=e.clientY-r.top;
           const sr=L.strips.find(q=>y>=q.y&&y<q.y+q.h);if(!sr)return;
@@ -318,6 +338,9 @@ GAMES.runner={
       update(S_,R){
         S=S_;
         if(S.seed&&S.seed!==seed){seed=S.seed;track=genTrack(seed);}
+        if(!restored&&started&&track){restored=true;   // page reloaded / rejoined mid-race: pick up where the host last saw us
+          const q=S.pos[c.me()];if(S.t>1.5&&q){sim.x=q.x||0;sim.y=0;sim.vy=0;sim.air=false;sim.stun=0;toast('Reconnected — keep running!');}
+          if(S.fin[c.me()]!=null){sim.fin=true;sim.x=LEN;showFinish();}}
         const now=performance.now();
         for(const p of R.pl){if(p.id===c.me())continue;const q=S.pos[p.id];if(!q)continue;let o=others[p.id];if(!o){o=others[p.id]={dx:q.x,dy:q.y,live:false};}o.x=q.x;o.y=q.y;o.v=S.fin[p.id]!=null||p.aw?0:q.v;o.f=q.f;o.w=q.w||[];o.ts=now;}
         if(sim.fin&&S.fin){const ids=Object.keys(S.fin).sort((a,b)=>S.fin[a]-S.fin[b]);const rk=ids.indexOf(String(c.me()));
