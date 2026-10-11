@@ -172,7 +172,9 @@ GAMES.bombparty={
 
   // ---------------- client ----------------
   mk(c){
-    let root,pRow,bombEl,sylEl,fuseEl,infoEl,inRow,inp,btn,live,msg,usedEl,ovl,tapHint;
+    let root,pRow,bombEl,sylEl,fuseEl,infoEl,inRow,inp,btn,live,msg,usedEl,ovl,tapHint,wantFocus=false,keyF=null;
+    const myTurn=()=>S0&&S0.cur===c.me()&&S0.ph==='turn';
+    function focusIn(){if(myTurn()&&inRow&&!inRow.classList.contains('off')){try{inp.focus({preventScroll:true});}catch(e){}}}
     let lastPsig='',lastLive='',S0=null,started=false,lastTn=-1,lastUsed=0,lastBoom=-1,nextTick=0,lastSend=0,sendT=0,lastSent='',lastPh='';
     const st=()=>{
       if(document.getElementById('st-bombparty'))return;
@@ -305,7 +307,10 @@ GAMES.bombparty={
         inp.addEventListener('input',()=>{const v=inp.value.toLowerCase().replace(/[^a-z]/g,'');if(v!==inp.value)inp.value=v;msg.textContent='';sendTyped();});
         inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();submit();}});
         btn.addEventListener('pointerdown',e=>{e.preventDefault();submit();});
-        bombEl.addEventListener('pointerdown',()=>{if(S0&&S0.cur===c.me()&&S0.ph==='turn')try{inp.focus({preventScroll:true});}catch(e){}});
+        f.addEventListener('click',e=>{if(e.target!==inp&&!(e.target.closest&&e.target.closest('button')))focusIn();});
+        // laptop: just start typing — any letter key on your turn goes into the box
+        keyF=e=>{if(!myTurn()||document.activeElement===inp||e.ctrlKey||e.metaKey||e.altKey)return;if(e.key&&e.key.length===1&&/[a-z]/i.test(e.key))focusIn();};
+        document.addEventListener('keydown',keyF);
       },
       start(){started=true;},
       update(S,R){
@@ -316,7 +321,7 @@ GAMES.bombparty={
             if(lastTn>=0&&S.used.length>lastUsed){sfx.good();bombEl.firstChild.classList.remove('pulse');}
             if(S.cur===me){ // my turn begins
               inp.value='';lastSent='';msg.textContent='';
-              try{inp.focus({preventScroll:true});}catch(e){}
+              wantFocus=true;
               buzz(40);sfx.go();
             }
           }
@@ -330,6 +335,7 @@ GAMES.bombparty={
         if(S.tn!==lastTn&&S.last&&S.last.id===me&&S.last.n===S.tn){try{inp.blur();}catch(e){}inp.value='';} // blur keyboard after my successful word
         lastTn=S.tn;
         draw(S,R);
+        if(wantFocus){wantFocus=false;focusIn();setTimeout(focusIn,60);}
         lastUsed=S.used.length;lastPh=S.ph;
       },
       event(m){
@@ -355,7 +361,7 @@ GAMES.bombparty={
           }
         }
       },
-      stop(){clearTimeout(sendT);try{inp&&inp.blur();}catch(e){}}
+      stop(){clearTimeout(sendT);if(keyF)document.removeEventListener('keydown',keyF);try{inp&&inp.blur();}catch(e){}}
     };
   }
 };

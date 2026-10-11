@@ -236,7 +236,7 @@ input:focus{border-color:#19d3ff}
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 'use strict';
-const VERSION='2.3.0';
+const VERSION='2.3.1';
 const $=s=>document.querySelector(s);
 const E=(tag,cls,html)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e;};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -596,7 +596,7 @@ function onState(st){
   $('#result').classList.toggle('on',st.ph==='result');
   if(st.ph==='intro')drawIntro(G);
   if(st.ph==='count')$('#cname').textContent=G.emoji+' '+G.name;
-  if(st.ph==='play'&&!cur.started){cur.started=true;cur.start();sfx.go();}
+  if(st.ph==='play'&&!cur.started){cur.started=true;cur.start();sfx.go();if(window.matchMedia&&matchMedia('(pointer:fine)').matches)setTimeout(focusGameInput,350);}
   if(st.ph==='result')drawResult();
   try{cur.update(st.S,st);}catch(e){console.error(e);}
 }
@@ -709,6 +709,11 @@ $('#copy').addEventListener('click',()=>{
 });
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!isHost&&R&&!rejoining&&(!hostConn||!hostConn.open))lostHost();});
 document.addEventListener('contextmenu',e=>e.preventDefault());
+// typing games: make sure a visible text box in the game can always be typed into (any letter key, a tap on empty space, or auto-focus on desktop)
+const gameInput=()=>[...document.querySelectorAll('#gbox input:not([type=range]):not([type=checkbox]):not([type=button]),#gbox textarea')].find(e=>e.offsetParent!==null&&!e.disabled&&!e.readOnly)||null;
+const focusGameInput=()=>{const i=gameInput();if(i&&document.activeElement!==i){try{i.focus({preventScroll:true});}catch(e){}}};
+document.addEventListener('keydown',e=>{const a=document.activeElement;if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'))return;if(e.ctrlKey||e.metaKey||e.altKey||!e.key||e.key.length!==1)return;if(R&&R.ph==='play')focusGameInput();},true);
+$('#gbox').addEventListener('click',e=>{if(e.target.closest('button,input,textarea,select,canvas'))return;if(R&&R.ph==='play')focusGameInput();});
 document.addEventListener('pointerdown',e=>{audio();const t=e.target.closest&&e.target.closest('.btn,.bchip,.gp,.seg button');if(t&&!t.disabled&&t.id!=='iready'&&t.id!=='start')sfx.ui();},true);
 $('#snd').addEventListener('click',()=>{audio();setMuted(!muted);});
 $('#snd').textContent=muted?'🔇':'🔊';
